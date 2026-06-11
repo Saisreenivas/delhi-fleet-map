@@ -4,6 +4,8 @@ A self-contained 3D fleet tracking dashboard for Delhi operations. No backend re
 
 **Live demo → [saisreenivas.github.io/delhi-fleet-map](https://saisreenivas.github.io/delhi-fleet-map/)**
 
+![Delhi Fleet Map preview](preview.png)
+
 ![Fleet Command · Delhi Operations · Live 3D](https://img.shields.io/badge/Fleet_Command-Delhi_Operations_%C2%B7_Live_3D-ff7a2f?style=flat-square)
 
 ## Features
