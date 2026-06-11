@@ -2099,6 +2099,7 @@ function tryInitVeh3d() {
     return matCache.get(k);
   };
   const DARK = 0x161c2a, GLASS = 0x33405a, TYRE = 0x14181f, HUB = 0x9aa4b3, WHITE = 0xf2f5fa; // dark slate glass: merges with the dark family, kills the toy-blue patch
+  const SHIRT = 0x3e6390; // rider shirt — distinct from DARK so the person reads against seat/box
 
   // place() mirrors with scale(s,-s,s) which flips winding AND breaks Lambert normals
   // (DoubleSide backface flip turns roof normals downward → everything lit by dark ground
@@ -2185,7 +2186,13 @@ function tryInitVeh3d() {
       g.add(box(0.36, 0.32, 0.36, color, 0, 0.80, 1.06, color, 0.35)); // headlamp cowl
       g.add(box(0.24, 0.10, 0.20, LIGHT, 0, 0.98, 1.12, 0xffe9a8, 0.9)); // headlamp
       g.add(box(0.78, 0.10, 0.09, DARK, 0, 0.70, 1.38));     // handlebar crossbar
-      g.add(box(0.48, 0.42, 0.68, DARK, 0, -0.38, 1.02));    // upright rider torso on seat
+      g.add(box(0.48, 0.42, 0.68, SHIRT, 0, -0.38, 1.02));   // upright rider torso on seat
+      // arms: shoulders → handlebar grips (the strongest "there's a person" cue)
+      for (const x of [0.27, -0.27]) {
+        const arm = box(0.13, 1.0, 0.13, SHIRT, x, 0.14, 1.40);
+        arm.rotation.x = -0.15;   // front end dips toward the grips
+        g.add(arm);
+      }
       g.add(box(0.38, 0.38, 0.32, color, 0, -0.36, 1.66, color, 0.35)); // helmet — low, touching torso
       g.add(box(0.56, 0.52, 0.50, DARK, 0, -1.10, 0.98));    // rear black delivery box on carrier
     } else if (type === 'car') {
