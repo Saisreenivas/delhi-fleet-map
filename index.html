@@ -427,8 +427,28 @@
     background: transparent;
     color: var(--ink-soft);
     font-size: 11.5px; font-weight: 600;
+    position: relative;
   }
   .scen.active { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+  .scen[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%; transform: translateX(-50%);
+    background: var(--panel-solid);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    color: var(--ink-soft);
+    font-size: 11px; font-weight: 400;
+    white-space: nowrap;
+    padding: 6px 10px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 99;
+    box-shadow: var(--shadow);
+  }
+  .scen[data-tip]:hover::after { opacity: 1; }
 
   /* ============ status readout ============ */
   .statusbar {
@@ -930,9 +950,9 @@ window.FLEET_CONFIG = {
 <!-- demo scenario bar -->
 <div class="demobar panel" id="demobar">
   <span class="dlabel">DEMO</span>
-  <button class="scen active" data-scen="rush">Morning Rush</button>
-  <button class="scen" data-scen="delivery">Delivery Peak</button>
-  <button class="scen" data-scen="night">Night Ops</button>
+  <button class="scen active" data-scen="rush" data-tip="85% moving · fast speeds · short stops — peak commute traffic">Morning Rush</button>
+  <button class="scen" data-scen="delivery" data-tip="62% moving · 33% at stops · slower pace — mid-day delivery drops">Delivery Peak</button>
+  <button class="scen" data-scen="night" data-tip="38% moving · 35% offline · long idle gaps — sparse overnight coverage">Night Ops</button>
 </div>
 
 <!-- status -->
