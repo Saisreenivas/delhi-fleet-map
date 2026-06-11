@@ -1,0 +1,3288 @@
+<!DOCTYPE html>
+<!--
+  ─────────────────────────────────────────────────────────────────────────────
+  Delhi Fleet Map — single-file 3D fleet operations console
+  MapLibre GL JS 5.x · OpenFreeMap Liberty vector tiles (no API key required)
+
+  MIT License
+
+  Copyright (c) 2026 Delhi Fleet Map contributors
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+  Map data © OpenStreetMap contributors · Tiles by OpenFreeMap · MapLibre GL JS
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#070b14" />
+<meta name="description" content="Delhi Fleet Map — real-time 3D fleet operations console. MapLibre GL JS + OpenFreeMap." />
+<title>Delhi Fleet Map · Live 3D Fleet Console</title>
+
+<link rel="preconnect" href="https://unpkg.com" crossorigin />
+<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+<link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg: #070b14;
+    --panel: #0d1322ee;
+    --panel-solid: #0d1322;
+    --line: #1c2740;
+    --ink: #e6ecf7;
+    --ink-soft: #8b99b8;
+    --accent: #ff7a2f;          /* overridden from CONFIG.company.accent at boot */
+    --accent-soft: #ff7a2f22;
+    --cyan: #2dd4bf;
+    --good: #22c55e;
+    --warn: #f59e0b;
+    --dead: #64748b;
+    --bad: #ef4444;
+    --radius: 14px;          /* floating panels, cards, popups */
+    --radius-sm: 10px;       /* buttons, inputs, rows, chips */
+    --radius-xs: 8px;        /* <=26px icon buttons, kbd */
+    --well: #0a0f1c;         /* inset controls on panels */
+    --hover: #131c31;        /* row hover + selection */
+    --sidebar-w: 332px;
+    --shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
+  }
+  /* day theme: dark panels float on a light map - strengthen edges */
+  body.theme-day {
+    --line: #2e4060;
+    --shadow: 0 12px 32px rgba(15, 25, 50, 0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 13px;
+  }
+
+  #map { position: absolute; inset: 0; }
+  #map canvas { outline: none; }
+
+  .vignette {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background: radial-gradient(ellipse at center, transparent 58%, rgba(2, 5, 12, 0.34) 100%);
+  }
+  body.theme-day .vignette {
+    background: radial-gradient(ellipse at center, transparent 62%, rgba(10, 20, 40, 0.18) 100%);
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+
+  button { font-family: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+  input { font-family: inherit; }
+
+  /* ============ sidebar ============ */
+  .sidebar {
+    position: absolute;
+    top: 12px; left: 12px; bottom: 12px;
+    width: var(--sidebar-w);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: transform 0.28s cubic-bezier(0.25, 0.8, 0.3, 1);
+  }
+  body.sidebar-closed .sidebar { transform: translateX(calc(-100% - 16px)); }
+
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .brand .logo {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, var(--accent), #d6420e);
+    font-size: 17px;
+    flex-shrink: 0;
+  }
+  .brand .b-name { font-size: 15px; font-weight: 800; letter-spacing: 0.2px; }
+  .brand .b-sub { font-size: 10px; color: var(--ink-soft); margin-top: 1px; }
+  .brand .spacer { flex: 1; }
+  .live-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    padding: 4px 10px;
+    border-radius: 99px;
+    border: 1px solid var(--line);
+    background: var(--well);
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .live-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); }
+  .live-pill.demo .dot { animation: blink 1.6s infinite; }
+  .live-pill.live .dot { background: var(--good); animation: blink 1.6s infinite; }
+  .live-pill.err .dot { background: var(--bad); }
+  @keyframes blink { 50% { opacity: 0.35; } }
+  .collapse-btn {
+    width: 26px; height: 26px;
+    border: 1px solid var(--line); border-radius: var(--radius-xs);
+    background: var(--well); color: var(--ink-soft);
+    font-size: 12px; line-height: 1;
+  }
+  .collapse-btn:hover { color: var(--ink); border-color: var(--accent); }
+
+  /* stats */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding: 8px 12px;
+    flex-shrink: 0;
+  }
+  .stat {
+    padding: 8px 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--well);
+    text-align: center;
+  }
+  .stat .v { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .stat .k { font-size: 10px; font-weight: 600; letter-spacing: 0.8px; color: var(--ink-soft); text-transform: uppercase; margin-top: 1px; }
+  .stat.moving .v { color: var(--good); }
+  .stat.idle .v { color: var(--warn); }
+  .stat.offline .v { color: var(--dead); }
+
+  /* tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 12px 8px;
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 7px 4px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 11.5px; font-weight: 600;
+    position: relative;
+  }
+  .tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+  .tab .badge {
+    position: absolute; top: -6px; right: -4px;
+    min-width: 16px; height: 16px;
+    padding: 0 4px;
+    border-radius: 99px;
+    background: var(--bad);
+    color: #fff;
+    font-size: 10px; font-weight: 700;
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  .tab .badge.on { display: inline-flex; }
+
+  .pane { flex: 1; display: none; flex-direction: column; min-height: 0; }
+  .pane.active { display: flex; }
+
+  /* vehicles pane */
+  .search-row {
+    display: flex; gap: 6px;
+    padding: 0 12px 8px;
+    flex-shrink: 0;
+  }
+  .search-row input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--well);
+    color: var(--ink);
+    font-size: 13px;
+    outline: none;
+  }
+  .search-row input:focus { border-color: var(--accent); }
+  .filters {
+    display: flex; gap: 5px;
+    padding: 0 12px 8px;
+    flex-shrink: 0;
+  }
+  .fchip {
+    flex: 1;
+    padding: 5px 4px;
+    font-size: 10px; font-weight: 600;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    background: transparent;
+    color: var(--ink-soft);
+  }
+  .fchip.active { color: var(--ink); border-color: currentColor; }
+  .fchip[data-f="moving"].active { color: var(--good); }
+  .fchip[data-f="idle"].active { color: var(--warn); }
+  .fchip[data-f="offline"].active { color: var(--dead); }
+  .fchip[data-f="all"].active { color: var(--cyan); }
+
+  .vlist, .zlist, .alist {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 2px 8px 10px;
+    scrollbar-width: thin;
+    scrollbar-color: #2a3650 transparent;
+  }
+  .vrow {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    margin-bottom: 3px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    text-align: left;
+  }
+  .vrow:hover { background: var(--hover); }
+  .vrow.sel { background: var(--hover); border-color: var(--accent); }
+  .vrow .sdot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .sdot.moving { background: var(--good); box-shadow: 0 0 8px var(--good); }
+  .sdot.idle { background: var(--warn); }
+  .sdot.offline { background: var(--dead); }
+  .vrow .vmeta { flex: 1; min-width: 0; }
+  .vrow .vname { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vrow .vsub { display: block; font-size: 10px; color: var(--ink-soft); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vrow .vspeed { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-soft); flex-shrink: 0; }
+  .vrow .vspeed.on { color: var(--good); }
+  .vrow .pb-btn {
+    width: 24px; height: 24px;
+    flex-shrink: 0;
+    border: 1px solid var(--line); border-radius: var(--radius-xs);
+    background: var(--well); color: var(--ink-soft);
+    font-size: 10px;
+  }
+  .vrow .pb-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* zones pane */
+  .zone-actions { display: flex; gap: 6px; padding: 0 12px 8px; flex-shrink: 0; }
+  .zbtn {
+    flex: 1;
+    padding: 8px 4px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 11.5px; font-weight: 600;
+  }
+  .zbtn:hover, .zbtn.active { color: var(--accent); border-color: var(--accent); }
+  .draw-hint {
+    margin: 0 12px 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    color: var(--ink);
+    font-size: 11.5px;
+    display: none;
+  }
+  .draw-hint.on { display: block; }
+  .zrow {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 3px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+  }
+  .zrow:hover { background: var(--hover); }
+  .zrow .zdot { width: 11px; height: 11px; border-radius: 4px; flex-shrink: 0; }
+  .zrow .zmeta { flex: 1; min-width: 0; }
+  .zrow .zname {
+    display: block;
+    font-size: 13px; font-weight: 600;
+    background: none; border: none; padding: 0;
+    color: var(--ink); text-align: left;
+  }
+  .zrow .zname:hover { color: var(--accent); }
+  .zrow .zsub { display: block; font-size: 10px; color: var(--ink-soft); margin-top: 1px; }
+  .zrow .zx.on { color: var(--accent); background: var(--accent-soft); }
+  .zrow.editing { border-color: var(--accent); background: var(--hover); }
+  .zrow .zin { font-size: 11.5px; font-weight: 700; color: var(--cyan); font-variant-numeric: tabular-nums; }
+  .zrow .zx {
+    width: 24px; height: 24px;
+    border: none; border-radius: var(--radius-xs);
+    background: transparent; color: var(--ink-soft);
+    font-size: 12px;
+  }
+  .zrow .zx:hover { color: var(--bad); background: #1c1220; }
+
+  /* alerts pane */
+  .arow {
+    display: flex; gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 3px;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--warn);
+    background: var(--well);
+  }
+  .arow.enter { border-left-color: var(--good); }
+  .arow.exit { border-left-color: var(--bad); }
+  .arow .amsg { flex: 1; font-size: 11.5px; line-height: 1.45; }
+  .arow .amsg b { font-weight: 700; }
+  .arow .atime { font-size: 10px; color: var(--ink-soft); white-space: nowrap; }
+  .empty { padding: 22px 16px; text-align: center; color: var(--ink-soft); font-size: 11.5px; line-height: 1.6; }
+
+  .side-foot {
+    padding: 8px 14px 10px;
+    border-top: 1px solid var(--line);
+    font-size: 10px; color: var(--ink-soft);
+    flex-shrink: 0;
+  }
+  .side-foot a { color: var(--ink-soft); }
+
+  /* sidebar opener (when collapsed) */
+  .side-opener {
+    position: absolute;
+    top: 12px; left: 12px;
+    z-index: 19;
+    width: 38px; height: 38px;
+    display: grid; place-items: center;
+    font-size: 15px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* ============ top-right controls ============ */
+  .topbar {
+    position: absolute;
+    top: 12px; right: 12px;
+    z-index: 20;
+    display: flex;
+    gap: 6px;
+  }
+  .tbtn {
+    height: 38px;
+    padding: 0 12px;
+    display: flex; align-items: center; gap: 7px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--panel);
+    color: var(--ink);
+    font-size: 13px; font-weight: 600;
+    box-shadow: var(--shadow);
+  }
+  .tbtn:hover { border-color: var(--accent); }
+  .tbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tbtn.icon-only { width: 38px; padding: 0; justify-content: center; }
+  .tbtn svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+  /* ============ demo bar (bottom-left) ============ */
+  .demobar {
+    position: absolute;
+    left: calc(var(--sidebar-w) + 24px); bottom: 12px;
+    z-index: 18;
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px;
+  }
+  body.sidebar-closed .demobar { left: 12px; }
+  .demobar .dlabel { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; color: var(--accent); padding: 0 5px; }
+  .scen {
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 11.5px; font-weight: 600;
+  }
+  .scen.active { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+
+  /* ============ status readout ============ */
+  .statusbar {
+    position: absolute;
+    right: 12px; bottom: 12px;
+    z-index: 18;
+    padding: 6px 12px;
+    border-radius: 99px;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* ============ chase HUD ============ */
+  .chasecard {
+    position: absolute;
+    top: 60px; left: 50%;
+    transform: translate(-50%, -120px);
+    z-index: 32;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px 8px 16px;
+    transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+    white-space: nowrap;
+  }
+  .chasecard.on { transform: translate(-50%, 0); }
+  .chasecard .cc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
+  .chasecard .cc-name { font-size: 13px; font-weight: 700; }
+  .chasecard .cc-meta { font-size: 11.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .chasecard button {
+    padding: 6px 12px;
+    border: 1px solid var(--line); border-radius: var(--radius-xs);
+    background: var(--well); color: var(--ink);
+    font-size: 11.5px; font-weight: 600;
+  }
+  .chasecard button:hover { border-color: var(--accent); }
+
+  /* ============ speedometer HUD ============ */
+  .speedhud {
+    position: absolute;
+    left: 50%; bottom: 196px;
+    transform: translateX(-50%);
+    z-index: 29;
+    display: none;
+    align-items: baseline; gap: 8px;
+    pointer-events: none;
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+  }
+  .speedhud.on { display: flex; }
+  .speedhud .sv {
+    font-size: 64px; font-weight: 800; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    -webkit-text-stroke: 1px rgba(255, 122, 47, 0.55);
+  }
+  .speedhud .su { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+
+  /* next-stop landmark marker pulse */
+  .lm-marker.next-stop .dot {
+    border-color: #fff;
+    animation: nextPulse 1.2s ease-out infinite;
+  }
+  @keyframes nextPulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 122, 47, 0.8); }
+    100% { box-shadow: 0 0 0 16px rgba(255, 122, 47, 0); }
+  }
+
+  /* ============ destination showcase ============ */
+  .showcase {
+    position: absolute;
+    right: 16px; top: 50%;
+    transform: translate(120%, -50%);
+    z-index: 30;
+    width: 330px;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    transition: transform 0.5s cubic-bezier(0.2, 0.85, 0.3, 1.05), opacity 0.4s, visibility 0s 0.5s;
+  }
+  .showcase.show { transform: translate(0, -50%); opacity: 1; visibility: visible; transition: transform 0.5s cubic-bezier(0.2, 0.85, 0.3, 1.05), opacity 0.4s; }
+  .showcase img { width: 100%; height: 205px; object-fit: cover; display: block; background: var(--well); }
+  .showcase .sc-body { padding: 12px 16px 16px; }
+  .showcase .sc-kicker { font-size: 10px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--accent); }
+  .showcase .sc-name { font-size: 15px; font-weight: 800; margin-top: 3px; }
+  .showcase .sc-text { font-size: 11.5px; color: var(--ink-soft); line-height: 1.55; margin-top: 6px; max-height: 88px; overflow: hidden; }
+  @media (max-width: 860px) { .showcase { display: none; } }
+
+  /* ============ tour overlay ============ */
+  .tourcard {
+    position: absolute;
+    left: 50%; bottom: 24px;
+    transform: translate(-50%, 16px);
+    z-index: 30;
+    width: 430px;
+    max-width: calc(100vw - 30px);
+    padding: 16px;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.35s, transform 0.35s, visibility 0s 0.35s;
+  }
+  .tourcard.show { opacity: 1; transform: translate(-50%, 0); visibility: visible; pointer-events: auto; transition: opacity 0.35s, transform 0.35s; }
+  .tourcard .t-photo {
+    margin: -16px -16px 12px;
+    height: 132px;
+    overflow: hidden;
+    border-radius: var(--radius) var(--radius) 0 0;
+    position: relative;
+    background: var(--well);
+  }
+  .tourcard .t-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tourcard .t-photo-tag {
+    position: absolute; left: 10px; bottom: 9px;
+    padding: 4px 11px;
+    border-radius: 99px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  }
+  .tourcard .t-step { font-size: 10px; font-weight: 700; letter-spacing: 1.4px; color: var(--accent); text-transform: uppercase; }
+  .tourcard h2 { font-size: 15px; font-weight: 800; margin-top: 3px; }
+  .tourcard p { font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; margin-top: 5px; }
+  .tourcard .t-row { display: flex; gap: 8px; margin-top: 12px; }
+  .tourcard .t-row button {
+    padding: 8px 12px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: var(--well); color: var(--ink);
+    font-size: 11.5px; font-weight: 600;
+  }
+  .tourcard .t-row button:hover { border-color: var(--accent); }
+  .tourcard .t-prog { flex: 1; display: flex; align-items: center; }
+  .tourcard .t-prog .bar { width: 100%; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .tourcard .t-prog .fill { height: 100%; width: 0; background: var(--accent); transition: width 0.4s linear; }
+
+  /* ============ playback bar ============ */
+  .pbbar {
+    position: absolute;
+    left: 50%; bottom: 24px;
+    transform: translate(-50%, 16px);
+    z-index: 31;
+    width: 560px;
+    max-width: calc(100vw - 30px);
+    padding: 12px 16px;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s, visibility 0s 0.3s;
+  }
+  .pbbar.show { opacity: 1; transform: translate(-50%, 0); visibility: visible; pointer-events: auto; transition: opacity 0.3s, transform 0.3s; }
+  .pbbar .pb-head { display: flex; align-items: center; gap: 10px; }
+  .pbbar .pb-title { font-size: 13px; font-weight: 700; flex: 1; }
+  .pbbar .pb-title small { color: var(--ink-soft); font-weight: 500; }
+  .pbbar .pb-x { width: 26px; height: 26px; border: 1px solid var(--line); border-radius: var(--radius-xs); background: var(--well); color: var(--ink-soft); }
+  .pbbar .pb-x:hover { color: var(--ink); border-color: var(--accent); }
+  .pbbar .pb-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .pbbar .pb-play {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .pbbar input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .pbbar .pb-time { font-size: 10px; color: var(--ink-soft); font-variant-numeric: tabular-nums; width: 56px; text-align: right; }
+  .pbbar select {
+    background: var(--well); color: var(--ink);
+    border: 1px solid var(--line); border-radius: var(--radius-xs);
+    font-size: 11.5px; padding: 4px 6px;
+    font-family: inherit;
+  }
+  .pbbar label { font-size: 10px; color: var(--ink-soft); display: flex; align-items: center; gap: 4px; }
+
+  /* ============ toast ============ */
+  .toast {
+    position: absolute;
+    top: 60px; left: 50%;
+    transform: translate(-50%, -90px);
+    z-index: 95;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-size: 13px; font-weight: 500;
+    box-shadow: var(--shadow);
+    transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+    max-width: calc(100vw - 40px);
+    text-align: center;
+  }
+  .toast.show { transform: translate(-50%, 0); }
+  .toast b { color: var(--accent); }
+
+  /* ============ HUD coordination — overlap guards ============ */
+  .showcase.no-img img { display: none; }                /* no dead photo box when wiki images fail */
+  body:has(.tourcard.show) .speedhud { bottom: 330px; }  /* speed readout clears the tour card during rides */
+  .demobar { transition: opacity 0.25s; }
+  body:has(.tourcard.show) .demobar,
+  body:has(.pbbar.show) .demobar { opacity: 0; pointer-events: none; }  /* idle chrome hides under tour / playback */
+  body:has(.chasecard.on) .toast { top: 118px; }         /* toasts drop below the chase pill */
+
+  /* ============ help modal ============ */
+  .modal-back {
+    position: absolute; inset: 0;
+    z-index: 90;
+    display: none;
+    align-items: center; justify-content: center;
+    background: rgba(3, 6, 12, 0.6);
+  }
+  .modal-back.show { display: flex; }
+  .modal { width: 470px; max-width: calc(100vw - 36px); max-height: calc(100vh - 70px); overflow-y: auto; padding: 20px; }
+  .modal h2 { font-size: 15px; font-weight: 800; }
+  .modal .m-sub { font-size: 11.5px; color: var(--ink-soft); margin: 3px 0 12px; }
+  .modal table { width: 100%; border-collapse: collapse; }
+  .modal td { padding: 6px 0; font-size: 11.5px; border-bottom: 1px solid var(--line); }
+  .modal td:first-child { width: 96px; }
+  .modal kbd {
+    display: inline-block; min-width: 20px;
+    padding: 2px 7px;
+    border-radius: var(--radius-xs);
+    border: 1px solid #2a3650;
+    border-bottom-width: 2px;
+    background: var(--well);
+    font-size: 10px; font-weight: 700;
+    text-align: center;
+  }
+  .modal .m-close {
+    margin-top: 14px; width: 100%;
+    padding: 10px;
+    border: none; border-radius: var(--radius-sm);
+    background: var(--accent); color: #fff;
+    font-size: 13px; font-weight: 700;
+  }
+  .modal .m-foot { margin-top: 11px; font-size: 10px; color: var(--ink-soft); line-height: 1.55; }
+  .modal .m-foot a { color: var(--accent); }
+
+  /* ============ landmark markers ============ */
+  .lm-marker {
+    position: absolute;   /* must stay absolute — see fleet build notes */
+    width: 30px; height: 30px;
+    border: none; background: transparent; padding: 0;
+    cursor: pointer;
+  }
+  .lm-marker .dot {
+    position: absolute; inset: 4px;
+    display: grid; place-items: center;
+    font-size: 11.5px;
+    background: #0d1322;
+    border: 1.5px solid var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 10px #ff7a2f55;
+    transition: transform 0.15s;
+  }
+  body.theme-day .lm-marker .dot { background: #fff; }
+  .lm-marker:hover .dot { transform: scale(1.25); }
+
+  /* vehicle popup */
+  .maplibregl-popup { z-index: 25; }
+  .maplibregl-popup-content {
+    font-family: 'Inter', sans-serif;
+    background: var(--panel-solid);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 12px 16px;
+    min-width: 215px;
+  }
+  .maplibregl-popup-tip { border-top-color: var(--panel-solid) !important; border-bottom-color: var(--panel-solid) !important; }
+  .maplibregl-popup-close-button { color: var(--ink-soft); font-size: 16px; right: 4px; top: 2px; }
+  .vp-name { font-size: 13px; font-weight: 700; padding-right: 14px; }
+  .vp-sub { font-size: 10px; color: var(--ink-soft); margin-top: 1px; }
+  .vp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 10px; margin-top: 8px; }
+  .vp-grid .k { font-size: 10px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.6px; }
+  .vp-grid .v { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .vp-pill {
+    display: inline-block;
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 99px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .vp-pill.moving { background: #14331f; color: var(--good); }
+  .vp-pill.idle { background: #36280a; color: var(--warn); }
+  .vp-pill.offline { background: #1d2430; color: var(--dead); }
+  .vp-row { display: flex; gap: 6px; margin-top: 10px; }
+  .vp-row button {
+    flex: 1;
+    padding: 6px 4px;
+    border: 1px solid var(--line); border-radius: var(--radius-xs);
+    background: var(--well); color: var(--ink);
+    font-size: 10px; font-weight: 600;
+  }
+  .vp-row button:hover { border-color: var(--accent); }
+  .vp-row button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* maplibre controls */
+  .maplibregl-ctrl-bottom-right { z-index: 17; bottom: 44px; }
+  .maplibregl-ctrl-group {
+    border-radius: var(--radius) !important;
+    overflow: hidden;
+    background: var(--panel) !important;
+    box-shadow: var(--shadow) !important;
+  }
+  .maplibregl-ctrl-group button { background: transparent !important; }
+  .maplibregl-ctrl-group button span { filter: invert(0.85); }
+  body.theme-day .maplibregl-ctrl-group button span { filter: none; }
+  .maplibregl-ctrl-attrib {
+    border-radius: 8px !important;
+    font-size: 10px !important;
+    background: rgba(13, 19, 34, 0.8) !important;
+    color: var(--ink-soft) !important;
+  }
+  .maplibregl-ctrl-attrib a { color: var(--ink-soft) !important; }
+  body.theme-day .maplibregl-ctrl-attrib { background: rgba(255,255,255,0.7) !important; color: #44546f !important; }
+  body.theme-day .maplibregl-ctrl-attrib a { color: #44546f !important; }
+
+  /* ============ loader ============ */
+  .loader {
+    position: absolute; inset: 0;
+    z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 20px;
+    background:
+      radial-gradient(ellipse at 28% 18%, #14264a 0%, transparent 55%),
+      radial-gradient(ellipse at 76% 82%, #3a1c33 0%, transparent 55%),
+      #070b14;
+    color: #fff;
+    transition: opacity 0.8s;
+  }
+  .loader.gone { opacity: 0; pointer-events: none; }
+  .loader .l-logo { font-size: 38px; }
+  .loader .l-title {
+    font-size: 26px; font-weight: 800; letter-spacing: 6px; text-indent: 6px;
+    background: linear-gradient(120deg, #ffb27a, var(--accent) 50%, #ff4d7e);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .loader .l-sub { font-size: 11.5px; letter-spacing: 3px; opacity: 0.55; margin-top: -12px; text-transform: uppercase; }
+  .loader .l-spin {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.12);
+    border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loader .l-msg { font-size: 11.5px; opacity: 0.55; min-height: 15px; }
+  .loader .l-retry {
+    display: none;
+    padding: 9px 26px;
+    border: 1px solid rgba(255,255,255,0.3); border-radius: 99px;
+    background: transparent; color: #fff;
+    font-size: 13px; font-weight: 600;
+  }
+  .loader.failed .l-spin { display: none; }
+  .loader.failed .l-retry { display: block; }
+
+  /* scrollbars */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: #2a3650; border-radius: 4px; }
+
+  /* ============ responsive ============ */
+  @media (max-width: 860px) {
+    .sidebar { width: min(86vw, 332px); }
+    body:not(.sidebar-closed) .demobar { display: none; }
+    .topbar { flex-wrap: wrap; justify-content: flex-end; max-width: 60vw; }
+    .tbtn .tlabel { display: none; }
+    .tbtn { padding: 0 12px; }
+    .statusbar { display: none; }
+    .pbbar, .tourcard { bottom: 12px; }
+  }
+</style>
+</head>
+<body class="theme-dusk">
+
+<!-- ════════════════════════════════════════════════════════════════════
+     CONFIG — edit this block to integrate with your backend / brand
+     ════════════════════════════════════════════════════════════════════ -->
+<script>
+window.FLEET_CONFIG = {
+  company: {
+    name: 'Fleet Command',
+    tagline: 'Delhi Operations · Live 3D',
+    logo: '🛰️',                 // emoji or single character
+    accent: '#ff7a2f',           // brand accent color
+  },
+  map: {
+    center: [77.2090, 28.6139],  // [lng, lat] — Delhi
+    zoom: 15.4,
+    pitch: 62,
+    bearing: -25,
+    theme: 'dusk',               // 'dusk' | 'day'
+    globeIntro: true,            // start from space (skipped when URL has a #view hash)
+  },
+  api: {
+    // LIVE MODE — set vehiclesUrl to enable. Expected JSON response: an array of
+    //   { id, name, lat, lng, heading(0-360), speed(km/h),
+    //     status('moving'|'idle'|'offline'), type('truck'|'van'|'bike'|'car'), driver }
+    // Polled every pollMs. transform(raw) lets you adapt any other shape.
+    vehiclesUrl: '',             // e.g. 'https://api.movexgeo.com/v1/vehicles'
+    headers: {},                 // e.g. { Authorization: 'Bearer …' }
+    pollMs: 5000,
+    transform: (raw) => raw,
+  },
+  demo: {
+    vehicleCount: 40,
+    scenario: 'rush',            // 'rush' | 'delivery' | 'night'
+  },
+  idleOrbitAfterMs: 45000,       // auto-orbit showcase after this much inactivity (0 = off)
+};
+</script>
+
+<div id="map"></div>
+<div class="vignette"></div>
+
+<!-- sidebar -->
+<aside class="sidebar panel" id="sidebar" aria-label="Fleet dashboard">
+  <div class="brand">
+    <div class="logo" id="brandLogo"></div>
+    <div>
+      <div class="b-name" id="brandName"></div>
+      <div class="b-sub" id="brandSub"></div>
+    </div>
+    <div class="spacer"></div>
+    <button class="live-pill demo" id="livePill" title="Toggle demo / live data"><span class="dot"></span><span id="liveLabel">DEMO</span></button>
+    <button class="collapse-btn" id="sideCollapse" aria-label="Collapse sidebar">◀</button>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat"><div class="v" id="stTotal">0</div><div class="k">Fleet</div></div>
+    <div class="stat moving"><div class="v" id="stMoving">0</div><div class="k">Moving</div></div>
+    <div class="stat idle"><div class="v" id="stIdle">0</div><div class="k">Idle</div></div>
+    <div class="stat offline"><div class="v" id="stOffline">0</div><div class="k">Offline</div></div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-pane="vehicles" role="tab">Vehicles</button>
+    <button class="tab" data-pane="zones" role="tab">Zones</button>
+    <button class="tab" data-pane="alerts" role="tab">Alerts <span class="badge" id="alertBadge">0</span></button>
+  </div>
+
+  <div class="pane active" id="pane-vehicles">
+    <div class="search-row">
+      <input id="search" type="search" placeholder="Search vehicle, plate, driver…  ( / )" autocomplete="off" />
+    </div>
+    <div class="filters" id="filters">
+      <button class="fchip active" data-f="all">All</button>
+      <button class="fchip" data-f="moving">Moving</button>
+      <button class="fchip" data-f="idle">Idle</button>
+      <button class="fchip" data-f="offline">Offline</button>
+    </div>
+    <div class="vlist" id="vlist"></div>
+  </div>
+
+  <div class="pane" id="pane-zones">
+    <div class="zone-actions">
+      <button class="zbtn" id="drawPoly">▰ Draw polygon</button>
+      <button class="zbtn" id="drawCircle">◯ Draw circle</button>
+    </div>
+    <div class="draw-hint" id="drawHint"></div>
+    <div class="zlist" id="zlist"></div>
+  </div>
+
+  <div class="pane" id="pane-alerts">
+    <div class="alist" id="alist"><div class="empty">No geofence alerts yet.<br>Vehicles crossing zone boundaries will appear here.</div></div>
+  </div>
+
+  <div class="side-foot">
+    © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · MapLibre · MIT
+  </div>
+</aside>
+<button class="side-opener panel" id="sideOpener" aria-label="Open sidebar" hidden>☰</button>
+
+<!-- top-right controls -->
+<div class="topbar">
+  <button class="tbtn" id="btnTour" title="Guided tour of Delhi landmarks (T)">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg><span class="tlabel">Tour Delhi</span>
+  </button>
+  <button class="tbtn icon-only" id="btnTheme" title="Day / dusk theme (D)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
+  <button class="tbtn icon-only" id="btnOrbit" aria-pressed="false" title="Auto-orbit (O)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+  </button>
+  <button class="tbtn icon-only" id="btnFit" title="Fit fleet in view (F)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+  </button>
+  <button class="tbtn icon-only" id="btnShare" title="Copy a link to this exact view (C)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+  </button>
+  <button class="tbtn icon-only" id="btnHelp" title="Shortcuts & about (H)">?</button>
+</div>
+
+<!-- demo scenario bar -->
+<div class="demobar panel" id="demobar">
+  <span class="dlabel">DEMO</span>
+  <button class="scen active" data-scen="rush">Morning Rush</button>
+  <button class="scen" data-scen="delivery">Delivery Peak</button>
+  <button class="scen" data-scen="night">Night Ops</button>
+</div>
+
+<!-- status -->
+<div class="statusbar panel" id="statusbar" aria-hidden="true"></div>
+
+<!-- chase HUD (replaces the map popup while chasing, so the road stays clear) -->
+<div class="chasecard panel" id="chaseCard">
+  <span class="cc-dot" id="ccDot"></span>
+  <span class="cc-name" id="ccName"></span>
+  <span class="cc-meta" id="ccMeta"></span>
+  <button id="ccStop">✕ Stop chase</button>
+</div>
+
+<!-- speedometer HUD (tour rides + chases) -->
+<div class="speedhud" id="speedHud" aria-hidden="true">
+  <span class="sv" id="speedVal">0</span>
+  <span class="su">km/h</span>
+</div>
+
+<!-- destination photo showcase (shown for the whole stop, ~9s) -->
+<div class="showcase panel" id="showcase">
+  <img id="scImg" alt="" />
+  <div class="sc-body">
+    <div class="sc-kicker">Now visiting</div>
+    <div class="sc-name" id="scName"></div>
+    <div class="sc-text" id="scText"></div>
+  </div>
+</div>
+
+<!-- tour overlay -->
+<div class="tourcard panel" id="tourcard">
+  <div class="t-photo" id="tPhotoWrap" hidden>
+    <img id="tPhoto" alt="" />
+    <span class="t-photo-tag" id="tPhotoTag"></span>
+  </div>
+  <div class="t-step" id="tStep"></div>
+  <h2 id="tName"></h2>
+  <p id="tDesc"></p>
+  <div class="t-row">
+    <button id="tStop">■ Stop</button>
+    <button id="tSkip">Skip ➞</button>
+    <div class="t-prog"><div class="bar"><div class="fill" id="tFill"></div></div></div>
+  </div>
+</div>
+
+<!-- playback bar -->
+<div class="pbbar panel" id="pbbar">
+  <div class="pb-head">
+    <div class="pb-title" id="pbTitle"></div>
+    <label><input type="checkbox" id="pbFollow" checked /> follow</label>
+    <select id="pbSpeed"><option value="1">1×</option><option value="4" selected>4×</option><option value="16">16×</option></select>
+    <button class="pb-x" id="pbClose" aria-label="Close playback">✕</button>
+  </div>
+  <div class="pb-row">
+    <button class="pb-play" id="pbPlay" aria-label="Play / pause">▶</button>
+    <input type="range" id="pbSlider" min="0" max="100" value="0" step="any" />
+    <div class="pb-time" id="pbTime">--:--</div>
+  </div>
+</div>
+
+<!-- toast -->
+<div class="toast" id="toast" role="status"></div>
+
+<!-- help modal -->
+<div class="modal-back" id="modalBack" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal panel">
+    <h2 id="modalTitle">Delhi Fleet Map</h2>
+    <div class="m-sub">Shortcuts, gestures &amp; about</div>
+    <table>
+      <tr><td><kbd>T</kbd></td><td>Start / stop the guided Delhi tour</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Toggle day / dusk theme</td></tr>
+      <tr><td><kbd>O</kbd></td><td>Toggle auto-orbit</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Fit the whole fleet in view</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Copy a shareable link to this view</td></tr>
+      <tr><td><kbd>/</kbd></td><td>Focus vehicle search</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Play / pause trip playback (when open)</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Cancel drawing · close playback / popups / panels</td></tr>
+      <tr><td><kbd>H</kbd> / <kbd>?</kbd></td><td>This panel</td></tr>
+      <tr><td>Mouse</td><td>Drag pan · right-drag rotate &amp; tilt · scroll zoom</td></tr>
+      <tr><td>Touch</td><td>One-finger pan · pinch zoom · two-finger drag tilt</td></tr>
+    </table>
+    <button class="m-close" id="modalClose">Got it</button>
+    <div class="m-foot">
+      MIT licensed demo console. Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors ·
+      tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ·
+      rendered with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL JS</a>.
+      Wire your backend in the <b>FLEET_CONFIG</b> block at the top of the file.
+    </div>
+  </div>
+</div>
+
+<!-- loader -->
+<div class="loader" id="loader">
+  <div class="l-logo" id="loaderLogo"></div>
+  <div class="l-title" id="loaderTitle">DELHI FLEET</div>
+  <div class="l-sub" id="loaderSub"></div>
+  <div class="l-spin"></div>
+  <div class="l-msg" id="loaderMsg">Contacting tile server…</div>
+  <button class="l-retry" onclick="location.reload()">Retry</button>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<!-- three.js (ESM-only ≥r161) exposed for the 3D vehicle layer; flat arrows
+     remain as automatic fallback if this fails to load -->
+<script type="module">
+  try {
+    const THREE = await import('https://unpkg.com/three@0.184.0/build/three.module.min.js');
+    window.THREE = THREE;
+    window.dispatchEvent(new Event('three-ready'));
+  } catch (_) { /* models unavailable — arrows take over */ }
+</script>
+<script>
+'use strict';
+
+/* ════════════════════════════════════════════════════════════════════
+   Delhi Fleet Map — application
+   ════════════════════════════════════════════════════════════════════ */
+
+const CFG = window.FLEET_CONFIG;
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const COARSE_POINTER = window.matchMedia('(pointer: coarse)').matches;
+const MOBILE_MQ = window.matchMedia('(max-width: 860px)');
+
+const HOME = { center: CFG.map.center, zoom: CFG.map.zoom, pitch: CFG.map.pitch, bearing: CFG.map.bearing };
+const SPACE = { center: CFG.map.center, zoom: 1.6, pitch: 0, bearing: 0 };
+const DELHI_BOUNDS = [[76.55, 28.10], [77.95, 29.10]];
+const BLD_MIN_ZOOM = 14, BLD_FULL_ZOOM = 14.8;
+const NO_PADDING = { top: 0, bottom: 0, left: 0, right: 0 };
+
+/* ---------------- tiny utils ---------------- */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const R_EARTH = 6371000;
+const rad = (d) => d * Math.PI / 180;
+const deg = (r) => r * 180 / Math.PI;
+function haversine(a, b) { // [lng,lat] → meters
+  const dLat = rad(b[1] - a[1]), dLng = rad(b[0] - a[0]);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLng / 2) ** 2;
+  return 2 * R_EARTH * Math.asin(Math.sqrt(s));
+}
+function bearingTo(a, b) {
+  const y = Math.sin(rad(b[0] - a[0])) * Math.cos(rad(b[1]));
+  const x = Math.cos(rad(a[1])) * Math.sin(rad(b[1])) - Math.sin(rad(a[1])) * Math.cos(rad(b[1])) * Math.cos(rad(b[0] - a[0]));
+  return (deg(Math.atan2(y, x)) + 360) % 360;
+}
+function circlePoly(center, radiusM, n = 36) { // GeoJSON ring
+  const ring = [];
+  for (let i = 0; i <= n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    const dLat = (radiusM * Math.cos(t)) / 111320;
+    const dLng = (radiusM * Math.sin(t)) / (111320 * Math.cos(rad(center[1])));
+    ring.push([center[0] + dLng, center[1] + dLat]);
+  }
+  return ring;
+}
+function pointInPoly(pt, ring) { // ray casting; ring = [[lng,lat],…]
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    if (((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+const fmtTime = (ms) => new Date(ms).toLocaleTimeString('en-IN', { hour12: false });
+const agoStr = (ms) => { const s = Math.max(0, Math.round((Date.now() - ms) / 1000)); return s < 60 ? s + 's ago' : Math.round(s / 60) + 'm ago'; };
+// every dynamic string that reaches innerHTML goes through this —
+// vehicle names/drivers can come from a LIVE API, zone names from user input
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ---------------- landmarks ---------------- */
+const LANDMARKS = [
+  { id: 'india-gate', name: 'India Gate', icon: '🇮🇳', coords: [77.22950, 28.61290], zoom: 16.25, pitch: 62, bearing: -96, glowR: 150,
+    desc: 'A 42-metre war-memorial arch on Kartavya Path, honouring some 70,000 soldiers of the British Indian Army who died between 1914 and 1921.' },
+  { id: 'red-fort', name: 'Red Fort (Lal Qila)', icon: '🏰', coords: [77.24100, 28.65616], zoom: 15.9, pitch: 61, bearing: 28, glowR: 420,
+    desc: 'Shah Jahan’s red-sandstone citadel — seat of Mughal power for 200 years, and a UNESCO World Heritage Site.' },
+  { id: 'qutub-minar', name: 'Qutub Minar', icon: '🗼', coords: [77.18528, 28.52444], zoom: 16.45, pitch: 65, bearing: -32, glowR: 220,
+    desc: 'A 73-metre fluted victory tower begun in 1199 — India’s tallest minaret, ringed by the ruins of Mehrauli.' },
+  { id: 'lotus-temple', name: 'Lotus Temple', icon: '🪷', coords: [77.25882, 28.55349], zoom: 16.15, pitch: 60, bearing: 60, glowR: 260,
+    desc: 'The Baháʼí House of Worship — 27 free-standing marble petals around a luminous prayer hall, open to every faith.' },
+  { id: 'humayun-tomb', name: 'Humayun’s Tomb', icon: '🕌', coords: [77.25060, 28.59327], zoom: 16.1, pitch: 60, bearing: 24, glowR: 300,
+    desc: 'The 1570 garden-tomb of Emperor Humayun — the first great Mughal mausoleum and the ancestor of the Taj Mahal.' },
+  { id: 'akshardham', name: 'Akshardham', icon: '🛕', coords: [77.27736, 28.61272], zoom: 15.95, pitch: 60, bearing: -44, glowR: 330,
+    desc: 'A sprawling 21st-century temple complex in pink sandstone and white marble on the Yamuna’s east bank.' },
+  { id: 'bangla-sahib', name: 'Gurudwara Bangla Sahib', icon: '🛕', coords: [77.20920, 28.62630], zoom: 16.3, pitch: 60, bearing: -20, glowR: 170,
+    desc: 'Delhi’s great Sikh house of worship — golden dome, holy sarovar, and a langar kitchen that feeds thousands daily.' },
+  { id: 'raj-ghat', name: 'Raj Ghat', icon: '🕊️', coords: [77.24950, 28.64060], zoom: 16.0, pitch: 55, bearing: 70, glowR: 260,
+    desc: 'The black-marble memorial to Mahatma Gandhi on the Yamuna bank, ringed by quiet lawns and an eternal flame.' },
+  { id: 'safdarjung-tomb', name: 'Safdarjung’s Tomb', icon: '⚱️', coords: [77.21060, 28.58930], zoom: 16.3, pitch: 58, bearing: 0, glowR: 200,
+    desc: 'The last great garden-tomb of Mughal Delhi (1754) — sandstone, marble, and faded grandeur.' },
+  { id: 'purana-qila', name: 'Purana Qila', icon: '🏯', coords: [77.24360, 28.60940], zoom: 15.9, pitch: 58, bearing: 40, glowR: 350,
+    desc: 'The “Old Fort” — 16th-century walls over the legendary site of Indraprastha, the city of the Mahabharata.' },
+  { id: 'lodhi-garden', name: 'Lodhi Garden', icon: '🌳', coords: [77.21970, 28.59310], zoom: 15.9, pitch: 55, bearing: -30, glowR: 380,
+    desc: '90 acres of lawns scattered with 15th-century Lodi and Sayyid dynasty tombs — Delhi’s favourite walking park.' },
+  { id: 'jama-masjid', name: 'Jama Masjid', icon: '🌙', coords: [77.23344, 28.65068], zoom: 16.35, pitch: 61, bearing: 102, glowR: 180,
+    desc: 'Shah Jahan’s great congregational mosque — its courtyard holds 25,000 worshippers above Old Delhi.' },
+  { id: 'connaught-place', name: 'Connaught Place', icon: '🛍️', coords: [77.21672, 28.63145], zoom: 15.55, pitch: 38, bearing: 0, glowR: 0,
+    desc: 'The Georgian-style double-ring colonnade at the heart of Lutyens’ New Delhi.' },
+  { id: 'rashtrapati-bhavan', name: 'Rashtrapati Bhavan', icon: '🏛️', coords: [77.19959, 28.61445], zoom: 15.85, pitch: 58, bearing: 86, glowR: 300,
+    desc: 'The President’s 340-room residence crowning Raisina Hill, looking down the ceremonial axis to India Gate.' },
+  { id: 'jantar-mantar', name: 'Jantar Mantar', icon: '🔭', coords: [77.21648, 28.62710], zoom: 16.55, pitch: 62, bearing: 0, glowR: 130,
+    desc: 'Jai Singh II’s monumental masonry observatory of 1724 — instruments that still tell time by shadow.' },
+];
+const TOUR_IDS = ['red-fort', 'raj-ghat', 'akshardham', 'purana-qila', 'humayun-tomb', 'lodhi-garden',
+  'safdarjung-tomb', 'india-gate', 'bangla-sahib', 'lotus-temple', 'qutub-minar'];
+
+// Wikipedia page per landmark — arrival photos + verified to resolve with thumbnails
+const WIKI_TITLES = {
+  'india-gate': 'India Gate', 'red-fort': 'Red Fort', 'qutub-minar': 'Qutb Minar',
+  'lotus-temple': 'Lotus Temple', 'humayun-tomb': "Humayun's Tomb", 'akshardham': 'Akshardham (Delhi)',
+  'bangla-sahib': 'Gurdwara Bangla Sahib', 'raj-ghat': 'Raj Ghat', 'safdarjung-tomb': "Safdarjung's Tomb",
+  'purana-qila': 'Purana Qila', 'lodhi-garden': 'Lodhi Gardens', 'jama-masjid': 'Jama Masjid, Delhi',
+  'connaught-place': 'Connaught Place, New Delhi', 'rashtrapati-bhavan': 'Rashtrapati Bhavan',
+  'jantar-mantar': 'Jantar Mantar, New Delhi',
+};
+
+// real material colors of each monument — drives the glowing 3D footprints
+const LM_COLORS = {
+  'india-gate': '#cdb892', 'red-fort': '#a63828', 'qutub-minar': '#b15532',
+  'lotus-temple': '#f2f1ec', 'humayun-tomb': '#ad5740', 'akshardham': '#d8a87e',
+  'bangla-sahib': '#f3ecd9', 'raj-ghat': '#4a504a', 'safdarjung-tomb': '#c2966b',
+  'purana-qila': '#8e5a42', 'lodhi-garden': '#9b8568', 'jama-masjid': '#b04a36',
+  'rashtrapati-bhavan': '#d3b48c', 'jantar-mantar': '#c2543c',
+};
+
+// "grandest route" via-points: legs detour through Delhi's most scenic axes
+const SCENIC_VIAS = {
+  'raj-ghat>akshardham': [[77.2503, 28.6178]],            // Ring Road sweep along the Yamuna bank
+  'safdarjung-tomb>india-gate': [[77.2073, 28.6135]],     // Vijay Chowk → the full Kartavya Path ceremonial axis
+  'india-gate>bangla-sahib': [[77.2225, 28.6129]],        // C-Hexagon swing before Janpath
+};
+
+/* ---------------- demo road corridors (plausible Delhi arteries) ---------------- */
+const CORRIDORS = [
+  [[77.103, 28.556], [77.120, 28.568], [77.143, 28.580], [77.166, 28.591], [77.187, 28.604], [77.205, 28.613]],           // NH48 airport → Raisina
+  [[77.161, 28.592], [77.187, 28.575], [77.208, 28.568], [77.234, 28.567], [77.258, 28.576], [77.270, 28.588]],           // Ring Rd south arc
+  [[77.199, 28.614], [77.219, 28.613], [77.229, 28.613], [77.243, 28.618], [77.249, 28.628], [77.246, 28.641]],           // Kartavya Path → ITO
+  [[77.231, 28.640], [77.230, 28.650], [77.230, 28.656], [77.241, 28.656], [77.245, 28.665], [77.225, 28.667]],           // Old Delhi loop
+  [[77.225, 28.667], [77.207, 28.679], [77.190, 28.695], [77.175, 28.710]],                                               // NH44 north
+  [[77.249, 28.628], [77.270, 28.625], [77.286, 28.621], [77.305, 28.616]],                                               // east Yamuna corridor
+  [[77.243, 28.618], [77.247, 28.603], [77.253, 28.589], [77.258, 28.568], [77.262, 28.545], [77.268, 28.520]],           // Mathura Rd south
+  [[77.166, 28.591], [77.172, 28.567], [77.180, 28.544], [77.186, 28.528], [77.205, 28.516], [77.230, 28.512]],           // Outer Ring SW
+  [[77.217, 28.631], [77.209, 28.626], [77.206, 28.620], [77.216, 28.615], [77.227, 28.621], [77.224, 28.629]],           // CP inner loop
+  [[77.187, 28.604], [77.160, 28.620], [77.135, 28.640], [77.120, 28.655], [77.110, 28.670]],                             // west Delhi
+];
+
+/* ════════════════════════════════════════════════════════════════════
+   REAL ROAD ROUTING — OSRM public router (snaps to actual Delhi streets)
+   Vehicles and the tour courier ride genuine road geometry; if the router
+   is unreachable the sim falls back to the corridor polylines above.
+   ════════════════════════════════════════════════════════════════════ */
+const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving/';
+const routeCache = new Map();
+const routeQueue = [];
+let routePumping = false;
+
+function buildRoute(coords) {   // coords: [[lng,lat],…] → {coords, cum, total}
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + haversine(coords[i - 1], coords[i]));
+  return { coords, cum, total: cum[cum.length - 1] };
+}
+function fallbackRoute(from, to) {   // straight line, used only when OSRM is down
+  return buildRoute([from, [lerp(from[0], to[0], 0.5), lerp(from[1], to[1], 0.5)], to]);
+}
+async function osrmFetch(from, to, vias) {
+  const pts = [from, ...(vias || []), to];
+  const key = pts.map((p) => p[0].toFixed(4) + ',' + p[1].toFixed(4)).join('|');
+  if (routeCache.has(key)) return routeCache.get(key);
+  const url = OSRM_URL + pts.map((p) => p[0] + ',' + p[1]).join(';') + '?geometries=geojson&overview=full';
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const res = await fetch(url, { signal: ctl.signal });
+    const d = await res.json();
+    if (d.code !== 'Ok' || !d.routes || !d.routes[0]) throw new Error(d.code || 'no route');
+    const route = buildRoute(d.routes[0].geometry.coordinates);
+    if (route.total < 50) throw new Error('degenerate');
+    routeCache.set(key, route);
+    return route;
+  } finally { clearTimeout(t); }
+}
+// gentle queue so 40 vehicles don't burst the public router; tour legs jump it
+function fetchRouteQueued(from, to, priority, vias) {
+  return new Promise((resolve) => {
+    const job = { from, to, vias, resolve };
+    priority ? routeQueue.unshift(job) : routeQueue.push(job);
+    pumpRouteQueue();
+  });
+}
+async function pumpRouteQueue() {
+  if (routePumping) return;
+  routePumping = true;
+  while (routeQueue.length) {
+    const job = routeQueue.shift();
+    try { job.resolve(await osrmFetch(job.from, job.to, job.vias)); }
+    catch (_) { job.resolve(null); }
+    await new Promise((r) => setTimeout(r, 450));
+  }
+  routePumping = false;
+}
+
+/* Wikipedia summaries → real photos + facts for tour stops (CORS-open API) */
+const wikiCache = new Map();
+async function fetchWiki(lm) {
+  if (wikiCache.has(lm.id)) return wikiCache.get(lm.id);
+  let out = { img: null, extract: '' };
+  try {
+    const res = await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(WIKI_TITLES[lm.id] || lm.name));
+    const d = await res.json();
+    out = {
+      // prefer a mid-size render; fall back to the API's native thumbnail
+      img: (d.originalimage && d.originalimage.width >= 640 && d.thumbnail && d.thumbnail.source)
+        ? d.thumbnail.source.replace(/\/(\d+)px-/, '/640px-')
+        : (d.thumbnail && d.thumbnail.source) || null,
+      full: (d.originalimage && d.originalimage.source) || null,
+      extract: d.extract || '',
+    };
+  } catch (_) {}
+  wikiCache.set(lm.id, out);
+  return out;
+}
+function sampleRoute(route, m) {   // distance along route → {pos, heading}
+  m = clamp(m, 0, route.total);
+  const cum = route.cum, pts = route.coords;
+  let lo = 0, hi = cum.length - 1;
+  while (lo < hi - 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= m) lo = mid; else hi = mid; }
+  const segLen = Math.max(0.1, cum[hi] - cum[lo]);
+  const k = (m - cum[lo]) / segLen;
+  return {
+    pos: [lerp(pts[lo][0], pts[hi][0], k), lerp(pts[lo][1], pts[hi][1], k)],
+    heading: bearingTo(pts[lo], pts[hi]),
+  };
+}
+function destPoint(p, brg, meters) {   // project a point ahead along a bearing
+  const dLat = (meters * Math.cos(rad(brg))) / 111320;
+  const dLng = (meters * Math.sin(rad(brg))) / (111320 * Math.cos(rad(p[1])));
+  return [p[0] + dLng, p[1] + dLat];
+}
+function lerpAngle(a, b, t) {
+  const d = ((b - a + 540) % 360) - 180;
+  return (a + d * t + 360) % 360;
+}
+const smooth01 = (t) => t * t * (3 - 2 * t);   // smoothstep — cinematic accel/decel
+
+// destinations the demo fleet shuttles between (OSRM snaps them to streets)
+const DESTS = [
+  [77.2167, 28.6314], [77.2295, 28.6129], [77.2410, 28.6562], [77.1900, 28.6517], [77.2430, 28.5680],
+  [77.2030, 28.5670], [77.2090, 28.5500], [77.1860, 28.5245], [77.1300, 28.6430], [77.1480, 28.6920],
+  [77.0880, 28.6210], [77.2730, 28.6090], [77.2490, 28.6280], [77.2280, 28.6660], [77.2300, 28.6500],
+  [77.2100, 28.5680], [77.1600, 28.5570], [77.1030, 28.5560], [77.1850, 28.5280], [77.2580, 28.5500],
+  [77.2920, 28.6080], [77.1930, 28.7050], [77.1310, 28.6680], [77.1990, 28.5760],
+];
+function randomDest(from) {
+  for (let k = 0; k < 8; k++) {
+    const d = DESTS[Math.floor(Math.random() * DESTS.length)];
+    if (haversine(from, d) > 1800) return d;
+  }
+  return DESTS[0];
+}
+
+/* ---------------- sample geofences ---------------- */
+const SAMPLE_ZONES = [
+  { id: 'z-cp', name: 'CP Hub', color: '#2dd4bf', ring: circlePoly([77.2167, 28.6314], 700) },
+  { id: 'z-airport', name: 'Airport Zone', color: '#60a5fa', ring: [[77.080, 28.540], [77.125, 28.540], [77.125, 28.572], [77.080, 28.572], [77.080, 28.540]] },
+  { id: 'z-oldcity', name: 'Old Delhi Restricted', color: '#ef4444', ring: [[77.222, 28.644], [77.248, 28.644], [77.248, 28.663], [77.222, 28.663], [77.222, 28.644]] },
+];
+
+/* ---------------- branding ---------------- */
+document.documentElement.style.setProperty('--accent', CFG.company.accent);
+document.documentElement.style.setProperty('--accent-soft', CFG.company.accent + '22');
+$('brandLogo').textContent = CFG.company.logo;
+$('brandName').textContent = CFG.company.name;
+const BUILD = 'v15';   // bumped on every change — confirms which copy you're running
+$('brandSub').textContent = CFG.company.tagline + ' · ' + BUILD;
+$('loaderLogo').textContent = CFG.company.logo;
+$('loaderSub').textContent = CFG.company.name;
+document.title = 'Delhi Fleet Map · ' + CFG.company.name;
+
+/* ---------------- loader plumbing ---------------- */
+const loaderEl = $('loader'), loaderMsg = $('loaderMsg');
+let mapLoaded = false, failTimer = 0;
+const loadMsgs = ['Contacting tile server…', 'Streaming vector tiles…', 'Spinning up the globe…'];
+let msgIdx = 0;
+const msgTimer = setInterval(() => {
+  if (mapLoaded || loaderEl.classList.contains('failed')) { clearInterval(msgTimer); return; }
+  msgIdx = Math.min(msgIdx + 1, loadMsgs.length - 1);
+  loaderMsg.textContent = loadMsgs[msgIdx];
+}, 1500);
+function loaderFail(msg) {
+  clearInterval(msgTimer);
+  loaderEl.classList.remove('gone');
+  loaderEl.classList.add('failed');
+  loaderMsg.textContent = msg;
+}
+
+/* ---------------- map init ---------------- */
+if (typeof maplibregl === 'undefined') {
+  loaderFail('Could not load the map library — check your connection and reload.');
+  throw new Error('maplibre-gl failed to load');
+}
+
+const HAS_VIEW_HASH = /^#[\d.]+\//.test(location.hash);   // shared link → skip globe intro
+const DO_GLOBE = CFG.map.globeIntro && !HAS_VIEW_HASH && !REDUCED_MOTION;
+
+let map;
+try {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://tiles.openfreemap.org/styles/liberty',
+    center: HOME.center, zoom: HOME.zoom, pitch: HOME.pitch, bearing: HOME.bearing,
+    minZoom: 1,
+    maxZoom: 19.5,
+    maxPitch: 72,
+    hash: true,
+    canvasContextAttributes: { antialias: window.devicePixelRatio <= 1.5 && (navigator.hardwareConcurrency || 8) >= 6 },
+    pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+    attributionControl: false,
+  });
+} catch (err) {
+  loaderFail('WebGL is unavailable in this browser — try enabling hardware acceleration.');
+  throw err;
+}
+window._fleetMap = map;
+
+map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+
+map.on('error', (e) => {
+  const msg = (e && e.error && e.error.message) || '';
+  if (!mapLoaded) {
+    if (!failTimer) failTimer = setTimeout(() => { if (!mapLoaded) loaderFail('Could not load the map — check your connection.' + (msg ? ' (' + msg + ')' : '')); }, 5000);
+  } else {
+    errToast('Some map data failed to load — pan or zoom to retry.');
+  }
+});
+map.getCanvas().addEventListener('webglcontextlost', () => loaderFail('Graphics context lost — reload to recover.'));
+map.getCanvas().addEventListener('webglcontextrestored', () => { loaderEl.classList.remove('failed'); loaderEl.classList.add('gone'); });
+
+/* ════════════════════════════════════════════════════════════════════
+   THEME ENGINE — recolors Liberty's base layers for dusk; restores for day
+   ════════════════════════════════════════════════════════════════════ */
+let theme = CFG.map.theme === 'day' ? 'day' : 'dusk';
+const origPaint = new Map();   // "layerId|prop" → original value (captured before first patch)
+
+function patchPaint(id, prop, val) {
+  if (!map.getLayer(id)) return;
+  const key = id + '|' + prop;
+  if (!origPaint.has(key)) origPaint.set(key, map.getPaintProperty(id, prop));
+  map.setPaintProperty(id, prop, val);
+}
+function restorePaint() {
+  for (const [key, val] of origPaint) {
+    const [id, prop] = key.split('|');
+    if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
+  }
+}
+
+// id-pattern → dusk paint patches (Liberty layer ids verified against live style)
+function duskBasemap() {
+  const L = map.getStyle().layers;
+  for (const l of L) {
+    const id = l.id;
+    if (l.type === 'background') { patchPaint(id, 'background-color', '#0a0e1a'); continue; }
+    if (l.type === 'raster') { patchPaint(id, 'raster-opacity', 0.22); patchPaint(id, 'raster-saturation', -0.7); continue; }
+    if (l.type === 'fill') {
+      if (id === 'water') patchPaint(id, 'fill-color', '#0c2238');
+      else if (/park|wood|grass|pitch|track|cemetery/.test(id)) patchPaint(id, 'fill-color', '#101d17');
+      else if (/wetland/.test(id)) patchPaint(id, 'fill-color', '#0e1d22');
+      else if (/ice/.test(id)) patchPaint(id, 'fill-color', '#16202e');
+      else if (/sand/.test(id)) patchPaint(id, 'fill-color', '#1b1e29');
+      else if (/hospital/.test(id)) patchPaint(id, 'fill-color', '#181226');
+      else if (/school/.test(id)) patchPaint(id, 'fill-color', '#121a2c');
+      else if (/residential|landuse/.test(id)) patchPaint(id, 'fill-color', '#0d1322');
+      else if (id === 'building') { patchPaint(id, 'fill-color', '#161e30'); patchPaint(id, 'fill-outline-color', '#0c1120'); }
+      else if (/aeroway/.test(id)) patchPaint(id, 'fill-color', '#141b2c');
+      else if (/road_area/.test(id)) patchPaint(id, 'fill-color', '#1a2335');
+      else patchPaint(id, 'fill-color', '#0d1322');
+      continue;
+    }
+    if (l.type === 'line') {
+      if (/waterway/.test(id)) patchPaint(id, 'line-color', '#0c2238');
+      else if (/park_outline/.test(id)) patchPaint(id, 'line-color', '#16271e');
+      else if (/boundary/.test(id)) patchPaint(id, 'line-color', '#39445e');
+      else if (/aeroway/.test(id)) patchPaint(id, 'line-color', '#232c44');
+      else if (/_casing/.test(id)) patchPaint(id, 'line-color', '#0c1120');
+      else if (/rail/.test(id)) patchPaint(id, 'line-color', '#283047');
+      else if (/motorway/.test(id)) patchPaint(id, 'line-color', '#45537c');
+      else if (/trunk_primary/.test(id)) patchPaint(id, 'line-color', '#39466a');
+      else if (/secondary_tertiary/.test(id)) patchPaint(id, 'line-color', '#2d3852');
+      else if (/path_pedestrian/.test(id)) patchPaint(id, 'line-color', '#1d2536');
+      else patchPaint(id, 'line-color', '#242e46');   // minor / service / link / street
+      continue;
+    }
+    if (l.type === 'symbol') {
+      patchPaint(id, 'text-color', /label_(city|town|state|country)/.test(id) ? '#c2cde6' : '#8fa0c0');
+      patchPaint(id, 'text-halo-color', '#0a0e1a');
+      if (/poi|airport|one_way/.test(id)) patchPaint(id, 'icon-opacity', 0.4);
+    }
+  }
+}
+
+const THEMES = {
+  dusk: {
+    sky: { 'sky-color': '#0d1733', 'horizon-color': '#e0763a', 'fog-color': '#141d33',
+      'sky-horizon-blend': 0.7, 'horizon-fog-blend': 0.5, 'fog-ground-blend': 0.85,
+      'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 10, 1, 13, 0.2] },
+    light: { anchor: 'map', color: '#ffb068', intensity: 0.28, position: [1.15, 230, 60] },
+    bldRamp: [0, '#232c44', 12, '#2a3552', 30, '#34405f', 60, '#46537a', 120, '#5d6b96', 220, '#7682ad'],
+    glow: ['interpolate', ['linear'], ['zoom'], 14, '#b3531a', 16, '#ff8b3d'],
+    label: '#cfd9ec', labelHalo: '#0a0e1a',
+  },
+  day: {
+    sky: { 'sky-color': '#7ec3f0', 'horizon-color': '#f4ead7', 'fog-color': '#efe9dd',
+      'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.55, 'fog-ground-blend': 0.82,
+      'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 10, 1, 13, 0.15] },
+    light: { anchor: 'map', color: '#fff8ec', intensity: 0.4, position: [1.15, 200, 50] },
+    bldRamp: [0, '#eae3d6', 12, '#ddd0bc', 30, '#c4ad8a', 60, '#a08160', 120, '#7d5c3e', 220, '#684a30'],
+    glow: ['interpolate', ['linear'], ['zoom'], 14, '#f07a2a', 16, '#ff8b3d'],
+    label: '#0f1d36', labelHalo: '#ffffff',
+  },
+};
+
+function rampExpr(stops) {
+  const e = ['interpolate', ['linear'], HEIGHT_EXPR];
+  for (let i = 0; i < stops.length; i += 2) e.push(stops[i], stops[i + 1]);
+  return e;
+}
+
+function applyTheme(next) {
+  theme = next;
+  document.body.classList.toggle('theme-day', theme === 'day');
+  document.body.classList.toggle('theme-dusk', theme === 'dusk');
+  const T = THEMES[theme];
+  if (theme === 'dusk') duskBasemap(); else restorePaint();
+  map.setSky(T.sky);
+  map.setLight(T.light);
+  if (map.getLayer(BLD_LAYER)) map.setPaintProperty(BLD_LAYER, 'fill-extrusion-color', rampExpr(T.bldRamp));
+  // monuments keep their true material colors in both themes (light does the rest)
+  // vehicle label colors
+  if (map.getLayer('veh-points')) {
+    map.setPaintProperty('veh-points', 'text-color', T.label);
+    map.setPaintProperty('veh-points', 'text-halo-color', T.labelHalo);
+  }
+  if (map.getLayer('zone-labels')) {
+    map.setPaintProperty('zone-labels', 'text-color', T.label);
+    map.setPaintProperty('zone-labels', 'text-halo-color', T.labelHalo);
+  }
+  if (veh3d) veh3d.setTheme(theme);   // relight the 3D vehicle models
+  try { localStorage.setItem('fleet-theme', theme); } catch (_) {}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   BUILDINGS + landmark glow
+   ════════════════════════════════════════════════════════════════════ */
+const BLD_LAYER = 'fleet-3d-buildings';
+const GLOW_LAYER = 'fleet-landmark-glow';
+// OpenFreeMap bakes render_height=5 into ~85% of Delhi buildings — boost that
+// cohort to a typical walk-up so the city reads as a dense 3D fabric.
+const HEIGHT_EXPR = ['case', ['<=', ['coalesce', ['get', 'render_height'], 5], 5], 11, ['get', 'render_height']];
+
+function setupBuildings() {
+  const layers = map.getStyle().layers;
+  let labelLayerId;
+  for (const l of layers) {
+    if (l.type === 'symbol' && l.layout && l.layout['text-field']) { labelLayerId = l.id; break; }
+  }
+  for (const l of layers) if (l.type === 'fill-extrusion') map.removeLayer(l.id);
+  if (map.getLayer('building')) map.setLayerZoomRange('building', 13, BLD_FULL_ZOOM);
+  // hide the huge "Delhi" city label once you're at street scale
+  ['label_city', 'label_city_capital'].forEach((id) => { if (map.getLayer(id)) map.setLayerZoomRange(id, 0, 13.5); });
+
+  const common = {
+    type: 'fill-extrusion',
+    source: 'openmaptiles',
+    'source-layer': 'building',
+    minzoom: BLD_MIN_ZOOM,
+  };
+  const heightPaint = {
+    'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], BLD_MIN_ZOOM, 0, BLD_FULL_ZOOM, HEIGHT_EXPR],
+    'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], BLD_MIN_ZOOM, 0, BLD_FULL_ZOOM, ['coalesce', ['get', 'render_min_height'], 0]],
+    'fill-extrusion-opacity': 1,
+    'fill-extrusion-vertical-gradient': true,
+  };
+  map.addLayer({
+    ...common,
+    id: BLD_LAYER,
+    filter: ['!=', ['get', 'hide_3d'], true],
+    paint: { 'fill-extrusion-color': rampExpr(THEMES[theme].bldRamp), ...heightPaint },
+  }, labelLayerId);
+
+  // Glowing monument footprints. 'within'/'distance' expressions can't evaluate
+  // polygon FEATURES in MapLibre, so we harvest real footprints near each
+  // landmark from loaded tiles and re-extrude them from a GeoJSON source,
+  // scaled 4% outward so their walls cleanly wrap the originals (no z-fight).
+  map.addSource('glow-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: GLOW_LAYER,
+    type: 'fill-extrusion',
+    source: 'glow-src',
+    minzoom: BLD_MIN_ZOOM,
+    paint: {
+      'fill-extrusion-color': ['coalesce', ['get', 'color'], '#ff8b3d'],   // true monument colors
+      'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], BLD_MIN_ZOOM, 0, BLD_FULL_ZOOM, ['get', 'h']],
+      'fill-extrusion-opacity': 1,
+      'fill-extrusion-vertical-gradient': true,
+    },
+  }, labelLayerId);
+  // NOTE: 'idle' starves once the sim's per-frame setData starts — harvest on
+  // camera settles + a slow interval instead (no-ops quickly when nothing new)
+  map.on('moveend', () => setTimeout(harvestGlowFootprints, 250));
+  setInterval(harvestGlowFootprints, 4000);
+}
+
+const GLOW_LMS = LANDMARKS.filter((l) => l.glowR > 0);
+const glowFeats = new Map();
+function harvestGlowFootprints() {
+  if (map.getZoom() < BLD_MIN_ZOOM - 0.6 || glowFeats.size > 4000) return;
+  let added = false;
+  let feats;
+  try { feats = map.querySourceFeatures('openmaptiles', { sourceLayer: 'building' }); } catch (_) { return; }
+  for (const f of feats) {
+    const g = f.geometry;
+    if (!g) continue;
+    const polys = g.type === 'Polygon' ? [g.coordinates] : (g.type === 'MultiPolygon' ? g.coordinates : []);
+    for (const poly of polys) {
+      const ring = poly[0];
+      if (!ring || ring.length < 4) continue;
+      let cx = 0, cy = 0;
+      for (const p of ring) { cx += p[0]; cy += p[1]; }
+      cx /= ring.length; cy /= ring.length;
+      const lm = GLOW_LMS.find((l) => haversine([cx, cy], l.coords) <= l.glowR);
+      if (!lm) continue;
+      // skip city-block-sized merged footprints that merely pass through the circle
+      let maxR = 0;
+      for (const p of ring) maxR = Math.max(maxR, haversine([cx, cy], p));
+      if (maxR > lm.glowR * 1.35) continue;
+      const key = cx.toFixed(6) + ',' + cy.toFixed(6);
+      if (glowFeats.has(key)) continue;
+      const scaled = poly.map((r) => r.map((p) => [cx + (p[0] - cx) * 1.04, cy + (p[1] - cy) * 1.04]));
+      const rh = f.properties.render_height;
+      const h = (rh == null || rh <= 5 ? 11 : rh) + 0.6;
+      glowFeats.set(key, { type: 'Feature', geometry: { type: 'Polygon', coordinates: scaled },
+        properties: { h, color: LM_COLORS[lm.id] || '#ff8b3d' } });
+      added = true;
+    }
+  }
+  if (added) {
+    const src = map.getSource('glow-src');
+    if (src) src.setData({ type: 'FeatureCollection', features: [...glowFeats.values()] });
+  }
+}
+
+/* ---------------- landmark markers ---------------- */
+const lmById = {};
+const lmMarkerEls = {};
+LANDMARKS.forEach((l) => { lmById[l.id] = l; });
+function addLandmarkMarkers() {
+  LANDMARKS.forEach((lm) => {
+    const el = document.createElement('button');
+    el.className = 'lm-marker';
+    el.type = 'button';
+    el.setAttribute('aria-label', lm.name);
+    el.title = lm.name;
+    el.innerHTML = '<span class="dot">' + lm.icon + '</span>';
+    el.addEventListener('click', (ev) => { ev.stopPropagation(); flyToLandmark(lm); });
+    new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(lm.coords).addTo(map);
+    lmMarkerEls[lm.id] = el;
+  });
+}
+function setNextStopMarker(id) {   // pulses the landmark we're riding toward
+  for (const [k, el] of Object.entries(lmMarkerEls)) el.classList.toggle('next-stop', k === id);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CAMERA MACHINERY — flights, orbit, idle showcase
+   (MapLibre fires an interrupted flight's moveend SYNCHRONOUSLY inside the
+    next camera call — the seq counter makes stale handlers no-ops.)
+   ════════════════════════════════════════════════════════════════════ */
+const flight = { active: false, interrupted: false };
+let flightSeq = 0;
+
+const orbit = { on: false, raf: 0, last: 0, startTs: 0, appliedTs: 0 };
+const ORBIT_DEG_PER_SEC = 4.2;
+const ORBIT_MAX_MS = 90000;
+
+function orbitFrame(ts) {
+  if (!orbit.on) return;
+  orbit.raf = requestAnimationFrame(orbitFrame);
+  if (!orbit.startTs) { orbit.startTs = ts; orbit.last = ts; return; }
+  if (ts - orbit.startTs > ORBIT_MAX_MS) { stopOrbit(); return; }
+  const dt = ts - orbit.last;
+  if (dt < 15) return;
+  orbit.last = ts;
+  if (!flight.active && !map.isMoving()) {
+    if (!orbit.appliedTs) orbit.appliedTs = ts;
+    const ramp = Math.min(1, (ts - orbit.appliedTs) / 1500);
+    map.setBearing(map.getBearing() + ORBIT_DEG_PER_SEC * ramp * Math.min(dt, 100) / 1000);
+  }
+}
+function startOrbit() {
+  if (orbit.on || REDUCED_MOTION) return;
+  orbit.on = true; orbit.last = 0; orbit.startTs = 0; orbit.appliedTs = 0;
+  orbit.raf = requestAnimationFrame(orbitFrame);
+  $('btnOrbit').setAttribute('aria-pressed', 'true');
+}
+function stopOrbit() {
+  if (!orbit.on) return;
+  orbit.on = false;
+  cancelAnimationFrame(orbit.raf);
+  $('btnOrbit').setAttribute('aria-pressed', 'false');
+}
+function toggleOrbit() { orbit.on ? stopOrbit() : startOrbit(); }
+
+function flyToLandmark(lm) {
+  stopOrbit(); endTourIfUser(); clearFollow();
+  const seq = ++flightSeq;
+  flight.active = true; flight.interrupted = false;
+  const cam = { center: lm.coords, zoom: lm.zoom, pitch: lm.pitch, bearing: lm.bearing, padding: NO_PADDING };
+  if (REDUCED_MOTION) { map.jumpTo(cam); flight.active = false; return; }
+  map.flyTo({ ...cam, speed: 0.9, curve: 1.45, essential: true });
+  map.once('moveend', () => { if (seq !== flightSeq) return; flight.active = false; });
+}
+function goHome() {
+  stopOrbit(); clearFollow();
+  const seq = ++flightSeq;
+  flight.active = true; flight.interrupted = false;
+  if (REDUCED_MOTION) { map.jumpTo({ ...HOME, padding: NO_PADDING }); flight.active = false; return; }
+  map.flyTo({ ...HOME, padding: NO_PADDING, speed: 0.9, curve: 1.4, essential: true });
+  map.once('moveend', () => { if (seq !== flightSeq) return; flight.active = false; });
+}
+
+/* idle showcase: orbit after N ms without interaction */
+let idleTimer = 0;
+function armIdleOrbit() {
+  if (!CFG.idleOrbitAfterMs) return;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    if (tour.on || playback.open || draw.mode || document.hidden) { armIdleOrbit(); return; }
+    if (map.getZoom() >= 13 && !orbit.on) startOrbit();
+    armIdleOrbit();
+  }, CFG.idleOrbitAfterMs);
+}
+
+// user input interrupts flights/orbit/tour; listen on the map container so
+// nav-control clicks count too
+['pointerdown', 'wheel', 'touchstart'].forEach((ev) => {
+  map.getContainer().addEventListener(ev, () => {
+    flight.interrupted = true;
+    stopOrbit();
+    endTourIfUser();
+    clearFollow();
+    armIdleOrbit();
+  }, { passive: true });
+});
+document.addEventListener('keydown', armIdleOrbit, { passive: true });
+
+/* ════════════════════════════════════════════════════════════════════
+   GUIDED TOUR — fly → Ken-Burns orbit segment → next
+   ════════════════════════════════════════════════════════════════════ */
+/* A courier bike carries you between monuments: orbit a landmark, then the
+   bike departs and the chase cam follows it along REAL streets (OSRM) to the
+   next stop. Routes for the next leg prefetch during each orbit. */
+const tour = { on: false, idx: 0, timer: 0, suspendUserEnd: false, phase: 'orbit', ride: null, nextRoutePromise: null, bearing: 0 };
+const tourcard = $('tourcard');
+// "bus-roof" framing: high pitch + long look-ahead = sitting on top of the
+// bus watching the road run toward the horizon
+const TOUR_CHASE = { pitch: 70, zoom: 17.9, aheadM: 58 };
+
+function showShowcase(lm) {   // big photo + facts panel, visible for the whole stop
+  const sc = $('showcase');
+  $('scName').textContent = lm.icon + '  ' + lm.name;
+  $('scText').textContent = lm.desc;
+  const img = $('scImg');
+  img.removeAttribute('src');
+  sc.classList.add('no-img');   // photo box stays collapsed until a real image lands
+  fetchWiki(lm).then((w) => {
+    if (!tour.on) return;
+    $('scText').textContent = (w.extract && w.extract.length > 60 ? w.extract : lm.desc).slice(0, 240);
+    if (w.img) {
+      img.onerror = () => {
+        if (w.full && img.src !== w.full) img.src = w.full;   // thumbnail blocked → try the original once
+        else sc.classList.add('no-img');                      // both failed → keep the box collapsed
+      };
+      img.onload = () => sc.classList.remove('no-img');
+      img.src = w.img;
+    }
+    sc.classList.add('show');
+  });
+}
+function hideShowcase() { $('showcase').classList.remove('show'); }
+
+function setTourPhoto(lm, tag) {
+  const wrap = $('tPhotoWrap'), img = $('tPhoto');
+  wrap.hidden = true;
+  $('tPhotoTag').textContent = tag || lm.name;
+  fetchWiki(lm).then((w) => {
+    if (!tour.on || !w.img) return;
+    img.onerror = () => {
+      // thumbnail blocked/missing → try the full-size original once
+      if (w.full && img.src !== w.full) { img.src = w.full; }
+      else wrap.hidden = true;
+    };
+    img.src = w.img;
+    wrap.hidden = false;
+  });
+}
+
+function startTour() {
+  if (tour.on) { endTour(true); return; }
+  stopOrbit(); clearFollow(); closePlayback(); popup.remove();
+  tour.on = true;
+  tour.idx = 0;
+  tour.park = null;
+  $('btnTour').setAttribute('aria-pressed', 'true');
+  tourcard.classList.add('show');
+  tourStep();
+}
+function tourStep() {
+  if (!tour.on) return;
+  tour.phase = 'orbit';
+  tour.ride = null;
+  $('speedHud').classList.remove('on');
+  setNextStopMarker(null);
+  const lm = lmById[TOUR_IDS[tour.idx]];
+  $('tStep').textContent = 'Tour · stop ' + (tour.idx + 1) + ' of ' + TOUR_IDS.length;
+  $('tName').textContent = lm.icon + '  ' + lm.name;
+  $('tDesc').textContent = lm.desc;
+  $('tFill').style.width = ((tour.idx + 1) / TOUR_IDS.length * 100) + '%';
+  $('tPhotoWrap').hidden = true;      // at stops the showcase panel carries the photo — no duplicate on the card
+  // park at the curb where the road route ended — never ON the monument itself
+  if (tour.park) setTourBike(tour.park.pos, tour.park.heading);
+  else setTourBike(null);             // first stop: the bus arrives for pickup at departure
+  setTourTrail(null);
+
+  // prefetch the next leg's road route (scenic vias where defined) + its photo
+  if (tour.idx + 1 < TOUR_IDS.length) {
+    const next = lmById[TOUR_IDS[tour.idx + 1]];
+    tour.nextRoutePromise = fetchRouteQueued(lm.coords, next.coords, true, SCENIC_VIAS[lm.id + '>' + next.id] || []);
+    fetchWiki(next);
+  }
+
+  const seq = ++flightSeq;
+  flight.active = true; flight.interrupted = false;
+  tour.suspendUserEnd = true;            // our own camera motion must not end the tour
+  map.flyTo({ center: lm.coords, zoom: lm.zoom, pitch: lm.pitch, bearing: lm.bearing, padding: NO_PADDING, duration: 4200, essential: true });
+  map.once('moveend', () => {
+    if (seq !== flightSeq || !tour.on) return;
+    flight.active = false;
+    showShowcase(lm);   // real photo + facts, on screen for the whole stop (~8.5s)
+    // Ken-Burns segment: slow push-in + drift around the monument
+    map.easeTo({ bearing: lm.bearing + 46, zoom: lm.zoom + 0.22, duration: 8500, easing: (t) => t, essential: true });
+    tour.timer = setTimeout(startRide, 8600);
+  });
+  setTimeout(() => { tour.suspendUserEnd = false; }, 300);
+}
+async function startRide() {
+  if (!tour.on) return;
+  const i = tour.idx;
+  if (i + 1 >= TOUR_IDS.length) { endTour(true); return; }
+  const from = lmById[TOUR_IDS[i]], to = lmById[TOUR_IDS[i + 1]];
+  let route = null;
+  try { route = await Promise.race([tour.nextRoutePromise, new Promise((r) => setTimeout(() => r(null), 4000))]); } catch (_) {}
+  if (!tour.on || tour.idx !== i || tour.phase !== 'orbit') return;
+  if (!route) route = fallbackRoute(from.coords, to.coords);
+
+  tour.phase = 'ride';
+  hideShowcase();   // photo slides away as the bus departs
+  tour.ride = { route, t: 0, durMs: REDUCED_MOTION ? 1 : clamp(route.total / 26 * 1000, 14000, 26000), lastTs: 0, go: false,
+    peakKmh: clamp(28 + route.total / 250, 35, 95) };
+  tour.bearing = sampleRoute(route, 1).heading;
+  const scenic = SCENIC_VIAS[from.id + '>' + to.id];
+  $('tStep').textContent = 'Departing · leg ' + (i + 1) + ' of ' + (TOUR_IDS.length - 1);
+  $('tName').textContent = '🚌  Next stop: ' + to.name;
+  $('tDesc').textContent = (route.total / 1000).toFixed(1) + ' km' + (scenic ? ' via the scenic route' : '') +
+    ' — you’re riding on the bus roof. Touch the map to take over.';
+  $('tFill').style.width = '0%';
+  setTourPhoto(to, 'Next stop');        // preview photo of where we're headed
+  setNextStopMarker(to.id);             // pulse the destination on the map
+  if (!REDUCED_MOTION) $('speedHud').classList.add('on');
+
+  // swoop down behind the courier before it pulls away
+  const seq = ++flightSeq;
+  flight.active = true; flight.interrupted = false;
+  tour.suspendUserEnd = true;
+  map.easeTo({
+    center: destPoint(route.coords[0], tour.bearing, TOUR_CHASE.aheadM),
+    bearing: tour.bearing, pitch: TOUR_CHASE.pitch, zoom: TOUR_CHASE.zoom,
+    duration: REDUCED_MOTION ? 0 : 1600, essential: true, padding: NO_PADDING,
+  });
+  map.once('moveend', () => {
+    if (seq !== flightSeq || !tour.on || !tour.ride) return;
+    flight.active = false;
+    tour.ride.go = true;
+  });
+  setTimeout(() => { tour.suspendUserEnd = false; }, 300);
+}
+function tourRideFrame(ts) {
+  if (!tour.on || tour.phase !== 'ride' || !tour.ride || !tour.ride.go) return;
+  const r = tour.ride;
+  if (!r.lastTs) { r.lastTs = ts; return; }
+  const dt = Math.min(ts - r.lastTs, 100);
+  r.lastTs = ts;
+  r.t = Math.min(1, r.t + dt / r.durMs);
+  const m = Math.max(1, smooth01(r.t) * r.route.total);
+  const s = sampleRoute(r.route, m);
+  setTourBike(s.pos, s.heading);
+  // breadcrumb trail behind the courier
+  const trail = [];
+  for (const [j, c] of r.route.coords.entries()) { if (r.route.cum[j] > m) break; trail.push(c); }
+  trail.push(s.pos);
+  setTourTrail(trail);
+  tour.bearing = lerpAngle(tour.bearing, s.heading, 0.07);
+  if (!flight.active && !map.isMoving()) {
+    map.jumpTo({
+      center: destPoint(s.pos, tour.bearing, TOUR_CHASE.aheadM),
+      bearing: tour.bearing, pitch: TOUR_CHASE.pitch, zoom: TOUR_CHASE.zoom,
+    });
+  }
+  // speedometer — accelerates out of the stop, cruises, brakes into the next
+  // (display speed is plausible bus pace; rides are time-compressed)
+  const wobble = r.t > 0.06 && r.t < 0.94 ? Math.sin(ts / 260) * 2.2 : 0;
+  $('speedVal').textContent = Math.max(0, Math.round(r.peakKmh * 4 * r.t * (1 - r.t) + wobble));
+  $('tFill').style.width = (r.t * 100) + '%';
+  if (r.t >= 1) {
+    tour.park = { pos: s.pos, heading: s.heading };   // remember the curbside spot
+    tour.ride = null;
+    tour.idx++;
+    tourStep();
+  }
+}
+function endTour(thenHome) {
+  if (!tour.on) return;
+  tour.on = false;
+  tour.ride = null;
+  clearTimeout(tour.timer);
+  ++flightSeq; flight.active = false;
+  setTourBike(null);
+  setTourTrail(null);
+  setNextStopMarker(null);
+  hideShowcase();
+  $('speedHud').classList.remove('on');
+  $('tPhotoWrap').hidden = true;
+  tourcard.classList.remove('show');
+  $('btnTour').setAttribute('aria-pressed', 'false');
+  if (thenHome) goHome();
+}
+function endTourIfUser() {
+  if (tour.on && !tour.suspendUserEnd) endTour(false);
+}
+$('tStop').addEventListener('click', () => endTour(true));
+$('tSkip').addEventListener('click', () => {
+  if (!tour.on) return;
+  clearTimeout(tour.timer);
+  tour.ride = null;
+  tour.idx = (tour.idx + 1) % TOUR_IDS.length;
+  tourStep();
+});
+$('btnTour').addEventListener('click', startTour);
+
+/* ════════════════════════════════════════════════════════════════════
+   VEHICLES — icons, sources/layers, demo simulation, live mode
+   ════════════════════════════════════════════════════════════════════ */
+const VTYPES = {
+  truck: { label: 'Truck', emoji: '🚚', vmin: 18, vmax: 52 },
+  van: { label: 'Van', emoji: '🚐', vmin: 20, vmax: 58 },
+  bike: { label: 'Bike', emoji: '🏍️', vmin: 14, vmax: 46 },
+  car: { label: 'Car', emoji: '🚗', vmin: 22, vmax: 64 },
+};
+const DRIVERS = ['Arjun Mehta', 'Priya Sharma', 'Rahul Verma', 'Sneha Gupta', 'Vikram Singh', 'Anita Joshi',
+  'Karan Malhotra', 'Deepa Nair', 'Sanjay Yadav', 'Pooja Reddy', 'Amit Kumar', 'Ritu Bansal',
+  'Manoj Tiwari', 'Kavita Iyer', 'Rohit Saxena', 'Neha Chauhan', 'Suresh Patel', 'Divya Menon'];
+
+const fleet = new Map();          // id → vehicle
+const history = new Map();        // id → [[t, lng, lat, speed], …]  (ring buffer)
+const HISTORY_MAX = 900;          // ≈15 min at 1s ticks
+let selectedId = null;
+let followId = null;
+let dataMode = 'demo';            // 'demo' | 'live'
+let liveTimer = 0, liveError = false;
+const SIM_TICK_MS = 1000;
+let simTimer = 0, lastTickAt = 0;
+
+/* status arrow icons drawn on canvas → map.addImage */
+function makeArrow(color, ring) {
+  const s = 56, c = document.createElement('canvas');
+  c.width = c.height = s;
+  const x = c.getContext('2d');
+  x.translate(s / 2, s / 2);
+  if (ring) {
+    x.beginPath(); x.arc(0, 0, 24, 0, Math.PI * 2);
+    x.fillStyle = color + '33'; x.fill();
+  }
+  x.beginPath();
+  x.moveTo(0, -20); x.lineTo(13, 14); x.lineTo(0, 6.5); x.lineTo(-13, 14);
+  x.closePath();
+  x.fillStyle = color;
+  x.strokeStyle = 'rgba(255,255,255,0.92)';
+  x.lineWidth = 2.5;
+  x.lineJoin = 'round';
+  x.fill(); x.stroke();
+  return x.getImageData(0, 0, s, s);
+}
+function addVehicleImages() {
+  const imgs = {
+    'veh-moving': makeArrow('#22c55e', true),
+    'veh-idle': makeArrow('#f59e0b', false),
+    'veh-offline': makeArrow('#64748b', false),
+    'veh-ghost': makeArrow('#2dd4bf', true),
+    'veh-tour': makeArrow(CFG.company.accent, true),
+  };
+  for (const [name, img] of Object.entries(imgs)) {
+    if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
+  }
+}
+
+function vehicleFeature(v) {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
+    properties: {
+      id: v.id, name: v.name, status: v.status, heading: Math.round(v.heading),
+      speed: Math.round(v.speed), type: v.type, driver: v.driver,
+      label: v.status === 'moving' ? Math.round(v.speed) + ' km/h' : '',
+    },
+  };
+}
+
+let visiblePredicate = () => true;
+function vehiclesGeoJSON() {
+  const feats = [];
+  for (const v of fleet.values()) if (visiblePredicate(v)) feats.push(vehicleFeature(v));
+  return { type: 'FeatureCollection', features: feats };
+}
+
+function setupVehicleLayers() {
+  addVehicleImages();
+  map.addSource('vehicles', { type: 'geojson', data: vehiclesGeoJSON(), cluster: true, clusterMaxZoom: 13, clusterRadius: 46 });
+  map.addLayer({
+    id: 'veh-clusters', type: 'circle', source: 'vehicles', filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': ['step', ['get', 'point_count'], '#2dd4bf', 8, '#60a5fa', 20, '#f59e0b'],
+      'circle-radius': ['step', ['get', 'point_count'], 14, 8, 18, 20, 24],
+      'circle-opacity': 0.85,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': 'rgba(255,255,255,0.85)',
+    },
+  });
+  map.addLayer({
+    id: 'veh-cluster-count', type: 'symbol', source: 'vehicles', filter: ['has', 'point_count'],
+    layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 12 },
+    paint: { 'text-color': '#08121f' },
+  });
+  map.addLayer({
+    id: 'veh-selected-ring', type: 'circle', source: 'vehicles',
+    filter: ['==', ['get', 'id'], '___none___'],
+    paint: {
+      'circle-radius': 30, 'circle-color': 'rgba(0,0,0,0)',
+      'circle-stroke-width': 2.5, 'circle-stroke-color': CFG.company.accent,
+    },
+  });
+  map.addLayer({
+    id: 'veh-points', type: 'symbol', source: 'vehicles', filter: ['!', ['has', 'point_count']],
+    layout: {
+      'icon-image': ['concat', 'veh-', ['get', 'status']],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.7, 14, 1.1, 17, 1.8],
+      'icon-rotate': ['get', 'heading'],
+      // flat-on-road (nav-puck style): the arrow lies on the street plane so
+      // its rotation matches the road direction exactly under any pitch —
+      // viewport billboarding skews perceived direction on pitched views
+      'icon-rotation-alignment': 'map',
+      'icon-pitch-alignment': 'map',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'text-field': ['get', 'label'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 10,
+      'text-offset': [0, 1.6],
+      'text-anchor': 'top',
+      'text-optional': true,
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': THEMES[theme].label,
+      'text-halo-color': THEMES[theme].labelHalo,
+      'text-halo-width': 1.2,
+    },
+  });
+
+  map.on('click', 'veh-points', (e) => {
+    if (draw.mode) return;   // don't open popups while sketching a zone
+    const f = e.features && e.features[0];
+    if (f) { selectVehicle(f.properties.id, { popup: true }); if (e.originalEvent) e.originalEvent._vehHit = true; }
+  });
+  map.on('click', 'veh-clusters', async (e) => {
+    if (draw.mode) return;
+    const f = e.features && e.features[0];
+    if (!f) return;
+    if (e.originalEvent) e.originalEvent._vehHit = true;
+    const zoom = await map.getSource('vehicles').getClusterExpansionZoom(f.properties.cluster_id);
+    map.easeTo({ center: f.geometry.coordinates, zoom: zoom + 0.4, duration: 600 });
+  });
+  ['veh-points', 'veh-clusters'].forEach((l) => {
+    map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
+  });
+}
+
+let vehDirty = false;
+function refreshVehicleSource() { vehDirty = true; }
+
+/* ════════════════════════════════════════════════════════════════════
+   3D VEHICLE MODELS — three.js custom layer.
+   Low-poly procedural meshes (bike/car/van/truck + the tour bus) replace
+   the flat arrows at close zoom; arrows remain at city scale and as the
+   automatic fallback if three.js never loads.
+   Frame: +Y forward (north at heading 0), +Z up, meters (~1.7× size).
+   ════════════════════════════════════════════════════════════════════ */
+let veh3d = null;
+const tourBusState = { pos: null, heading: 0 };
+// Local-origin reference: scene units are METERS relative to REF — keeps Group
+// translations small so float32 GPU uniforms don't quantize child offsets
+// (absolute-mercator translations (~0.6) snapped parts meters apart per frame).
+const REF = maplibregl.MercatorCoordinate.fromLngLat(CFG.map.center, 0);
+const REF_S = REF.meterInMercatorCoordinateUnits();
+function tryInitVeh3d() {
+  if (veh3d || !window.THREE || !mapLoaded || !map.getLayer('veh-points')) return;
+  const THREE = window.THREE;
+  const scene = new THREE.Scene();
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x9aa3b8, 1.5); // light ground bounce — dark ground made shadowed faces muddy
+  hemi.position.set(0, 0, 1);                    // +Z is "up" in mercator space
+  const sun = new THREE.DirectionalLight(0xfff1dd, 2.6);
+  sun.position.set(0.5, -0.8, 1.2);
+  const fill = new THREE.DirectionalLight(0xbfd4ff, 0.8);
+  fill.position.set(-0.6, 0.7, 0.4);
+  scene.add(hemi, sun, fill);
+  const groups = new Map();      // vehicle id → THREE.Group
+  let tourGroup = null;
+  const matCache = new Map();
+  const COLORS = { moving: 0x1fe25e, idle: 0xffa820, offline: 0x9aa8bf };
+  const ACCENT = parseInt(CFG.company.accent.replace('#', ''), 16);
+  const mat = (c, e = 0, ei = 1) => {
+    const k = c + '|' + e + '|' + ei;
+    if (!matCache.has(k)) matCache.set(k, new THREE.MeshLambertMaterial({ color: c, emissive: e, emissiveIntensity: ei, side: THREE.DoubleSide }));
+    return matCache.get(k);
+  };
+  const DARK = 0x161c2a, GLASS = 0x33405a, TYRE = 0x14181f, HUB = 0x9aa4b3, WHITE = 0xf2f5fa; // dark slate glass: merges with the dark family, kills the toy-blue patch
+
+  // place() mirrors with scale(s,-s,s) which flips winding AND breaks Lambert normals
+  // (DoubleSide backface flip turns roof normals downward → everything lit by dark ground
+  // hemisphere = navy blobs). Pre-mirroring each geometry in y cancels the mirror: true
+  // front faces render, roofs are sky-lit, and classic BackSide outline hulls work.
+  const ygeo = (geo) => { geo.scale(1, -1, 1); return geo; };
+  function box(w, l, h, color, x = 0, y = 0, z = 0, e = 0, ei = 1) {
+    const mesh = new THREE.Mesh(ygeo(new THREE.BoxGeometry(w, l, h)), mat(color, e, ei));
+    mesh.position.set(x, y, z + h / 2);
+    return mesh;
+  }
+  function wheel(r, w, x, y) {   // tyre + hub cap, axle along X, resting on the ground
+    const grp = new THREE.Group();
+    grp.add(new THREE.Mesh(ygeo(new THREE.CylinderGeometry(r, r, w, 16)), mat(TYRE)));
+    grp.add(new THREE.Mesh(ygeo(new THREE.CylinderGeometry(r * 0.52, r * 0.52, w + 0.05, 12)), mat(HUB)));
+    grp.rotation.z = Math.PI / 2;
+    grp.position.set(x, y, r);
+    return grp;
+  }
+  // soft radial-gradient blob shadow — grounds the model against the map
+  const shadowTex = (() => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+    const cx = cv.getContext('2d');
+    const gr = cx.createRadialGradient(64, 64, 6, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(0,0,0,0.50)');
+    gr.addColorStop(0.6, 'rgba(0,0,0,0.30)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    cx.fillStyle = gr; cx.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(cv);
+  })();
+  const shadowMat = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  function blobShadow(w, l) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l), shadowMat);
+    m.position.set(0, 0, 0.04);
+    return m;
+  }
+  // inverted-hull toon outlines — dark rim makes low-poly read as deliberate art
+  // Geometries are pre-mirrored in y (see ygeo) so the matrix mirror restores true winding:
+  // classic BackSide inverted-hull rim is correct here. (Without ygeo, BackSide drew a full
+  // dark shell over every model — that was the "dark blob" bug.)
+  // v14: y-flip moved to the camera matrix → object matrices have POSITIVE determinant,
+  // so three.js no longer flips frontFace per-object. Screen winding is still mirrored
+  // once (by the camera 'l'), so the inverted-hull must use FrontSide here (BackSide
+  // re-drew the full dark shell — verified live).
+  const outlineMat = new THREE.MeshBasicMaterial({ color: 0x101830, side: THREE.FrontSide });
+  window._vehOutlineMat = outlineMat;   // live debug handle (side/color tuning)
+  function addOutlines(g) {
+    const meshes = [];
+    g.traverse((m) => { if (m.isMesh && m.material !== shadowMat) meshes.push(m); });
+    for (const m of meshes) {
+      const o = new THREE.Mesh(m.geometry, outlineMat);
+      o.position.copy(m.position); o.rotation.copy(m.rotation);
+      // constant ~8cm world rim regardless of mesh size — a fixed 7% blew up to a
+      // 35cm offset shell on big boxes (the "outline doesn't hug" complaint)
+      m.geometry.computeBoundingBox();
+      const _sz = m.geometry.boundingBox.getSize(new THREE.Vector3());
+      const _d = Math.max(_sz.x, _sz.y, _sz.z) || 1;
+      o.scale.copy(m.scale).multiplyScalar(1 + 0.05 / _d);
+      o.renderOrder = -1;
+      m.parent.add(o);
+    }
+  }
+  const LIGHT = 0xfff2c9, TAIL = 0xff3b30;
+  function lamp(x, y, z, w = 0.34) { return box(w, 0.14, 0.22, LIGHT, x, y, z, 0xffe9a8, 0.9); }   // glowing headlight
+  function tail(x, y, z, w = 0.34) { return box(w, 0.12, 0.18, TAIL, x, y, z, TAIL, 0.7); }        // glowing taillight
+  function beacon(color, y, z) { return box(0.72, 1.3, 0.24, color, 0, y, z, color, 1.0); }        // roof status strip (top-read hero)
+  function buildModel(type, color) {
+    const g = new THREE.Group();
+    if (type === 'bike') {
+      // Indian commuter motorcycle (Hero Splendor silhouette), side-profile first.
+      // v15 (rigid multi-part OK post f64-camera fix): 14 parts, 3 values
+      // (status, DARK, LIGHT) + tyres; slanted fork reuses wheel-metal HUB.
+      g.add(blobShadow(1.4, 3.4));
+      g.add(wheel(0.45, 0.18, 0, 1.05));                     // front wheel (forward)
+      g.add(wheel(0.45, 0.18, 0, -0.95));                    // rear wheel
+      g.add(box(0.26, 0.72, 0.12, DARK, 0, 1.10, 0.91));     // front fender
+      g.add(box(0.26, 0.78, 0.12, DARK, 0, -1.00, 0.91));    // rear fender
+      const fork = box(0.15, 0.12, 0.78, HUB, 0, 0.915, 0.385);
+      fork.rotation.x = 0.40;                                // telescopic fork: front axle → headstock rake
+      g.add(fork);
+      g.add(box(0.36, 0.66, 0.42, DARK, 0, 0, 0.38));        // engine block under tank (air gap below = motorcycle)
+      g.add(box(0.52, 0.78, 0.42, color, 0, 0.42, 0.88, color, 0.35)); // fuel TANK at mid (dominant status read)
+      g.add(box(0.46, 0.95, 0.16, DARK, 0, -0.48, 0.90));    // long flat seat, stepped down from tank
+      g.add(box(0.36, 0.32, 0.36, color, 0, 0.80, 1.06, color, 0.35)); // headlamp cowl
+      g.add(box(0.24, 0.10, 0.20, LIGHT, 0, 0.98, 1.12, 0xffe9a8, 0.9)); // headlamp
+      g.add(box(0.78, 0.10, 0.09, DARK, 0, 0.70, 1.38));     // handlebar crossbar
+      g.add(box(0.48, 0.42, 0.68, DARK, 0, -0.38, 1.02));    // upright rider torso on seat
+      g.add(box(0.38, 0.38, 0.32, color, 0, -0.36, 1.66, color, 0.35)); // helmet — low, touching torso
+      g.add(box(0.56, 0.52, 0.50, DARK, 0, -1.10, 0.98));    // rear black delivery box on carrier
+    } else if (type === 'car') {
+      g.add(blobShadow(2.9, 6.2));
+      g.add(box(2.2, 5.0, 0.85, color, 0, 0, 0.45, color, 0.22)); // body shell
+      g.add(box(1.95, 2.55, 0.7, GLASS, 0, -0.3, 1.28));     // dark greenhouse
+      g.add(box(1.85, 2.3, 0.14, color, 0, -0.3, 1.96, color, 0.22)); // roof
+      g.add(box(2.24, 0.42, 0.4, DARK, 0, 2.32, 0.45));      // front bumper
+      g.add(box(2.24, 0.42, 0.4, DARK, 0, -2.32, 0.45));     // rear bumper
+      [[1.0, 1.55], [-1.0, 1.55], [1.0, -1.55], [-1.0, -1.55]].forEach(([x, y]) => g.add(wheel(0.42, 0.34, x, y)));
+      g.add(lamp(0.72, 2.46, 0.92)); g.add(lamp(-0.72, 2.46, 0.92));
+      g.add(tail(0.72, -2.46, 0.95)); g.add(tail(-0.72, -2.46, 0.95));
+    } else if (type === 'van') {
+      g.add(blobShadow(3.2, 7.4));
+      g.add(box(2.4, 4.6, 2.2, color, 0, -0.85, 0.5, color, 0.22)); // cargo body
+      g.add(box(2.3, 1.9, 1.55, color, 0, 2.15, 0.5, color, 0.22)); // cab nose
+      g.add(box(2.2, 0.45, 0.8, GLASS, 0, 2.92, 1.2));       // windshield
+      g.add(box(2.34, 1.0, 0.55, GLASS, 0, 2.25, 1.35));     // cab side glass
+      g.add(box(1.6, 0.14, 0.45, DARK, 0, 3.04, 0.5));       // grille
+      g.add(box(2.3, 4.4, 0.14, WHITE, 0, -0.85, 2.7));      // white roof
+      [[1.08, 2.0], [-1.08, 2.0], [1.08, -2.1], [-1.08, -2.1]].forEach(([x, y]) => g.add(wheel(0.46, 0.4, x, y)));
+      g.add(lamp(0.8, 3.06, 0.88)); g.add(lamp(-0.8, 3.06, 0.88));
+      g.add(tail(0.85, -3.12, 0.95)); g.add(tail(-0.85, -3.12, 0.95));
+    } else if (type === 'truck') {
+      g.add(blobShadow(3.4, 9.0));
+      g.add(box(2.4, 7.6, 0.4, DARK, 0, 0, 0.35));           // chassis rail
+      g.add(box(2.45, 1.8, 1.85, color, 0, 2.9, 0.75, color, 0.22)); // cab (status color)
+      g.add(box(2.3, 0.42, 0.85, GLASS, 0, 3.65, 1.7));      // windshield
+      g.add(box(2.6, 5.2, 2.6, 0xe8ebf2, 0, -1.0, 0.8));     // container (single neutral block)
+      [[1.1, 3.0], [-1.1, 3.0], [1.1, -1.4], [-1.1, -1.4], [1.1, -2.6], [-1.1, -2.6]]
+        .forEach(([x, y]) => g.add(wheel(0.52, 0.45, x, y)));
+      g.add(lamp(0.85, 3.82, 0.9)); g.add(lamp(-0.85, 3.82, 0.9));
+      g.add(tail(0.9, -3.62, 1.0)); g.add(tail(-0.9, -3.62, 1.0));
+    } else {                                                 // bus (tour)
+      g.add(blobShadow(3.6, 12.5));
+      g.add(box(3.04, 11.04, 0.55, DARK, 0, 0, 0.35));       // dark skirt
+      g.add(box(3.0, 11.0, 2.6, color, 0, 0, 0.65, color, 0.22)); // body
+      g.add(box(3.06, 9.0, 1.0, GLASS, 0, -0.7, 1.9));       // window band
+      g.add(box(2.8, 0.5, 1.3, GLASS, 0, 5.28, 1.5));        // windshield
+      g.add(box(2.8, 10.6, 0.18, WHITE, 0, 0, 3.25, 0xffffff, 0.12)); // white roof
+      g.add(box(1.7, 1.9, 0.4, 0xc3cedf, 0, 1.7, 3.43));     // roof AC unit (front, contrast vs white roof)
+      g.add(box(1.7, 1.9, 0.4, 0xc3cedf, 0, -1.7, 3.43));    // roof AC unit (rear)
+      g.add(box(1.86, 0.34, 0.1, DARK, 0, 0, 3.43));         // roof vent strip
+      [[1.3, 3.5], [-1.3, 3.5], [1.3, -3.3], [-1.3, -3.3]].forEach(([x, y]) => g.add(wheel(0.58, 0.5, x, y)));
+      g.add(lamp(1.0, 5.55, 0.95, 0.5)); g.add(lamp(-1.0, 5.55, 0.95, 0.5));
+      g.add(tail(1.0, -5.55, 1.05, 0.5)); g.add(tail(-1.0, -5.55, 1.05, 0.5));
+    }
+    addOutlines(g);
+    g.matrixAutoUpdate = false;
+    // legibility exaggeration — small vehicles need more to read at chase zoom
+    g.userData.scale = type === 'bike' ? 3.6 : type === 'car' ? 3.3 : type === 'bus' ? 2.6 : 2.8;
+    return g;
+  }
+  function place(g, pos, heading) {
+    const mc = maplibregl.MercatorCoordinate.fromLngLat(pos, 0);
+    // zoom-adaptive boost: 1.0 (true scale) at z>=17.8 — the chase/close view the
+    // user lives in must read street-scale, not parade-float; grows when zoomed out
+    const zb = 1 + Math.max(0, Math.min(1.9, (17.8 - map.getZoom()) / 2.4));
+    // meters relative to REF (y-flip lives ONLY in the camera 'l' matrix)
+    g.position.set((mc.x - REF.x) / REF_S, -((mc.y - REF.y) / REF_S), 0);
+    g.rotation.set(0, 0, -rad(heading));
+    const k = (g.userData.scale || 2.2) * zb;
+    g.scale.set(k, k, k);
+    g.updateMatrix();   // matrixAutoUpdate stays false
+  }
+
+  map.addLayer({
+    id: 'veh-3d',
+    type: 'custom',
+    renderingMode: '3d',
+    onAdd(mp, gl) {
+      this.camera = new THREE.Camera();
+      this.renderer = new THREE.WebGLRenderer({ canvas: mp.getCanvas(), context: gl, antialias: true });
+      this.renderer.autoClear = false;
+    },
+    render(gl, args) {
+      const arr = args && args.defaultProjectionData ? args.defaultProjectionData.mainMatrix : args;
+      const show = map.getZoom() >= 13.6;
+      for (const [id, g] of groups) if (!fleet.has(id)) { scene.remove(g); groups.delete(id); }
+      if (show) {
+        for (const v of fleet.values()) {
+          let g = groups.get(v.id);
+          const key = v.type + '|' + v.status;
+          if (!g || g.userData.key !== key) {
+            if (g) scene.remove(g);
+            g = buildModel(v.type, COLORS[v.status] || 0x888888);
+            g.userData.key = key;
+            scene.add(g);
+            groups.set(v.id, g);
+          }
+          g.visible = visiblePredicate(v);
+          if (g.visible) place(g, [v.lng, v.lat], v.heading);
+        }
+      } else {
+        for (const g of groups.values()) g.visible = false;
+      }
+      if (tourBusState.pos) {
+        if (!tourGroup) { tourGroup = buildModel('bus', ACCENT); scene.add(tourGroup); }
+        tourGroup.visible = true;
+        place(tourGroup, tourBusState.pos, tourBusState.heading);
+      } else if (tourGroup) tourGroup.visible = false;
+      // compose REF local-origin transform in float64 BEFORE handing to the GPU
+      const m = new THREE.Matrix4().fromArray(arr);
+      const l = new THREE.Matrix4().makeTranslation(REF.x, REF.y, REF.z).scale(new THREE.Vector3(REF_S, -REF_S, REF_S));
+      this.camera.projectionMatrix = m.multiply(l);
+      this.renderer.resetState();
+      this.renderer.render(scene, this.camera);
+    },
+  });
+
+  veh3d = {
+    setTheme(t) {
+      if (t === 'dusk') {
+        hemi.color.set(0x8fa6e0); hemi.groundColor.set(0x55608a); hemi.intensity = 1.0;
+        sun.color.set(0xff9a55); sun.intensity = 1.9;
+        fill.color.set(0x7388c0); fill.intensity = 0.5;
+      } else {
+        hemi.color.set(0xffffff); hemi.groundColor.set(0x9aa3b8); hemi.intensity = 1.5;
+        sun.color.set(0xfff1dd); sun.intensity = 2.6;
+        fill.color.set(0xbfd4ff); fill.intensity = 0.8;
+      }
+    },
+  };
+  veh3d.setTheme(theme);
+  // models own the close zooms — fade the flat arrows out underneath them
+  map.setPaintProperty('veh-points', 'icon-opacity', ['interpolate', ['linear'], ['zoom'], 13.2, 1, 13.7, 0]);
+  map.setPaintProperty('tour-bike-pt', 'icon-opacity', ['interpolate', ['linear'], ['zoom'], 13.2, 1, 13.7, 0]);
+}
+window.addEventListener('three-ready', tryInitVeh3d);
+
+/* per-frame interpolation between sim ticks (smooth movement) */
+let renderRaf = 0, lastRender = 0;
+function renderLoop(ts) {
+  renderRaf = requestAnimationFrame(renderLoop);
+  if (document.hidden) return;
+  if (ts - lastRender < 33) return;   // ~30fps
+  lastRender = ts;
+  const t = clamp((performance.now() - lastTickAt) / SIM_TICK_MS, 0, 1);
+  let moved = false;
+  for (const v of fleet.values()) {
+    if (v.fromLng === undefined) continue;
+    const nl = lerp(v.fromLng, v.toLng, t), na = lerp(v.fromLat, v.toLat, t);
+    if (nl !== v.lng || na !== v.lat) { v.lng = nl; v.lat = na; moved = true; }
+  }
+  if (moved || vehDirty) {
+    vehDirty = false;
+    const src = map.getSource('vehicles');
+    if (src) src.setData(vehiclesGeoJSON());
+    if (followId) {
+      const v = fleet.get(followId);
+      if (v) {
+        updateChaseCard(v);
+        if (chase.ready && !flight.active && !map.isMoving()) chaseFrame([v.lng, v.lat], v.heading);
+      } else clearFollow();
+    }
+    if (popupOpenFor && popupEl) updatePopupContent();
+  }
+  tourRideFrame(ts);
+}
+
+/* ---------------- demo simulation ---------------- */
+const SCENARIOS = {
+  rush: { name: 'Morning Rush', movingP: 0.85, idleP: 0.12, offlineP: 0.03, speedMul: 1.15, idleMin: 4, idleMax: 18 },
+  delivery: { name: 'Delivery Peak', movingP: 0.62, idleP: 0.33, offlineP: 0.05, speedMul: 0.95, idleMin: 6, idleMax: 30 },
+  night: { name: 'Night Ops', movingP: 0.38, idleP: 0.27, offlineP: 0.35, speedMul: 0.85, idleMin: 10, idleMax: 45 },
+};
+let scenario = SCENARIOS[CFG.demo.scenario] ? CFG.demo.scenario : 'rush';
+
+function plate(i) {
+  const series = ['DL01', 'DL02', 'DL03', 'DL09'][i % 4];
+  const letters = String.fromCharCode(65 + (i * 7) % 26) + String.fromCharCode(65 + (i * 13) % 26);
+  return series + ' ' + letters + ' ' + String(1000 + (i * 137) % 9000);
+}
+
+// delivery fleet skews heavily to two-wheelers
+const TYPE_MIX = ['bike', 'bike', 'bike', 'bike', 'bike', 'bike', 'van', 'van', 'car', 'truck'];
+
+function spawnFleet(n) {
+  fleet.clear(); history.clear();
+  for (let i = 0; i < n; i++) {
+    const ci = i % CORRIDORS.length;
+    const cor = CORRIDORS[ci];
+    const si = Math.floor(Math.random() * (cor.length - 1));
+    const t0 = Math.random();
+    const p = [lerp(cor[si][0], cor[si + 1][0], t0), lerp(cor[si][1], cor[si + 1][1], t0)];
+    const type = TYPE_MIX[i % TYPE_MIX.length];
+    const v = {
+      id: 'v' + (i + 1),
+      name: plate(i),
+      driver: DRIVERS[i % DRIVERS.length],
+      type,
+      lng: p[0], lat: p[1],
+      heading: bearingTo(cor[si], cor[si + 1]),
+      speed: 0,
+      status: 'moving',
+      corridor: ci, seg: si, segT: t0, dir: Math.random() < 0.5 ? 1 : -1,
+      route: null, distM: 0, routePending: false,
+      targetSpeed: lerp(VTYPES[type].vmin, VTYPES[type].vmax, Math.random()),
+      statusTimer: 0,
+      updatedAt: Date.now(),
+    };
+    fleet.set(v.id, v);
+    history.set(v.id, []);
+    queueVehicleRoute(v);   // progressively snap the whole fleet onto real streets
+  }
+  applyScenarioStatuses(true);
+}
+
+async function queueVehicleRoute(v) {
+  if (v.routePending) return;
+  v.routePending = true;
+  const route = await fetchRouteQueued([v.lng, v.lat], randomDest([v.lng, v.lat]), false);
+  v.routePending = false;
+  if (!fleet.has(v.id)) return;        // fleet respawned / live mode while queued
+  if (route) { v.route = route; v.distM = 0; }
+}
+
+function applyScenarioStatuses(hard) {
+  const S = SCENARIOS[scenario];
+  for (const v of fleet.values()) {
+    if (!hard && Math.random() > 0.35) continue;   // soft transition: only some re-roll
+    const r = Math.random();
+    if (r < S.offlineP) { v.status = 'offline'; v.statusTimer = 30 + Math.random() * 120; }
+    else if (r < S.offlineP + S.idleP) { v.status = 'idle'; v.statusTimer = S.idleMin + Math.random() * (S.idleMax - S.idleMin); }
+    else { v.status = 'moving'; v.statusTimer = 0; }
+  }
+}
+
+function advanceVehicle(v, dtSec) {
+  const S = SCENARIOS[scenario];
+  // status machine
+  if (v.status !== 'moving') {
+    v.speed = 0;
+    v.statusTimer -= dtSec;
+    if (v.statusTimer <= 0) {
+      if (v.status === 'offline' && Math.random() < 0.6) { v.statusTimer = 30 + Math.random() * 90; }
+      else { v.status = 'moving'; v.targetSpeed = lerp(VTYPES[v.type].vmin, VTYPES[v.type].vmax, Math.random()); }
+    }
+    return;
+  }
+  if (Math.random() < 0.012) { v.status = 'idle'; v.statusTimer = S.idleMin + Math.random() * (S.idleMax - S.idleMin); v.speed = 0; return; }
+  if (Math.random() < 0.002) { v.status = 'offline'; v.statusTimer = 40 + Math.random() * 120; v.speed = 0; return; }
+
+  v.speed += (v.targetSpeed * S.speedMul - v.speed) * 0.25 + (Math.random() - 0.5) * 3;
+  v.speed = clamp(v.speed, 6, 90);
+
+  // ── real road route (OSRM) ──
+  if (v.route) {
+    v.distM += v.speed / 3.6 * dtSec;
+    if (v.distM >= v.route.total) {
+      // arrived: delivery stop, then head for a new destination
+      const end = v.route.coords[v.route.coords.length - 1];
+      v.lng = end[0]; v.lat = end[1];
+      v.route = null;
+      v.status = 'idle';
+      v.statusTimer = S.idleMin + Math.random() * (S.idleMax - S.idleMin);
+      v.speed = 0;
+      queueVehicleRoute(v);
+      return;
+    }
+    const s = sampleRoute(v.route, v.distM);
+    v.lng = s.pos[0]; v.lat = s.pos[1];
+    let dh = ((s.heading - v.heading + 540) % 360) - 180;
+    v.heading = (v.heading + dh * 0.45 + 360) % 360;
+    return;
+  }
+  if (!v.routePending) queueVehicleRoute(v);   // router was down earlier — retry
+
+  // ── no route yet: creep along the current heading until OSRM replies.
+  // Spawn headings follow major arteries so this stays plausible briefly,
+  // and the first real route snaps the vehicle onto the street grid.
+  const ahead = destPoint([v.lng, v.lat], v.heading, v.speed / 3.6 * dtSec * 0.6);
+  v.lng = ahead[0]; v.lat = ahead[1];
+}
+
+function simTick() {
+  const now = Date.now();
+  const dtSec = SIM_TICK_MS / 1000;
+  for (const v of fleet.values()) {
+    v.fromLng = v.lng; v.fromLat = v.lat;
+    advanceVehicle(v, dtSec);
+    v.toLng = v.lng; v.toLat = v.lat;
+    v.lng = v.fromLng; v.lat = v.fromLat;      // render loop interpolates from→to
+    v.updatedAt = now;
+    const h = history.get(v.id);
+    h.push([now, v.toLng, v.toLat, v.speed]);
+    if (h.length > HISTORY_MAX) h.shift();
+  }
+  lastTickAt = performance.now();
+  refreshVehicleSource();
+  checkGeofences();
+  scheduleUIRefresh();
+}
+
+function startDemo() {
+  dataMode = 'demo';
+  clearInterval(liveTimer);
+  $('livePill').className = 'live-pill demo';
+  $('liveLabel').textContent = 'DEMO';
+  $('demobar').style.display = '';
+  if (fleet.size === 0) spawnFleet(CFG.demo.vehicleCount);
+  clearInterval(simTimer);
+  lastTickAt = performance.now();
+  simTimer = setInterval(simTick, SIM_TICK_MS);
+}
+
+/* ---------------- live mode ---------------- */
+async function pollLive() {
+  try {
+    const res = await fetch(CFG.api.vehiclesUrl, { headers: CFG.api.headers });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const raw = await res.json();
+    if (dataMode !== 'live') return;   // user toggled back to demo while we were fetching
+    const list = CFG.api.transform(raw);
+    const now = Date.now();
+    const seen = new Set();
+    for (const r of list) {
+      seen.add(String(r.id));
+      let v = fleet.get(String(r.id));
+      if (!v) {
+        v = { id: String(r.id), name: r.name || String(r.id), driver: r.driver || '—', type: VTYPES[r.type] ? r.type : 'van',
+          lng: r.lng, lat: r.lat, heading: r.heading || 0, speed: r.speed || 0, status: r.status || 'moving', updatedAt: now };
+        fleet.set(v.id, v);
+        history.set(v.id, []);
+      }
+      v.fromLng = v.lng; v.fromLat = v.lat;
+      v.toLng = r.lng; v.toLat = r.lat;
+      v.heading = r.heading != null ? r.heading : bearingTo([v.fromLng, v.fromLat], [r.lng, r.lat]);
+      v.speed = r.speed || 0;
+      v.status = ['moving', 'idle', 'offline'].includes(r.status) ? r.status : 'moving';
+      v.updatedAt = now;
+      const h = history.get(v.id);
+      h.push([now, r.lng, r.lat, v.speed]);
+      if (h.length > HISTORY_MAX) h.shift();
+    }
+    for (const id of fleet.keys()) if (!seen.has(id)) { fleet.delete(id); history.delete(id); }
+    lastTickAt = performance.now();
+    liveError = false;
+    $('livePill').className = 'live-pill live';
+    refreshVehicleSource();
+    checkGeofences();
+    scheduleUIRefresh();
+  } catch (err) {
+    liveError = true;
+    $('livePill').className = 'live-pill err';
+    errToast('Live feed error: ' + err.message);
+  }
+}
+function startLive() {
+  if (!CFG.api.vehiclesUrl) {
+    showToast('No API configured — set <b>FLEET_CONFIG.api.vehiclesUrl</b> to enable live mode.');
+    return false;
+  }
+  dataMode = 'live';
+  clearInterval(simTimer);
+  fleet.clear(); history.clear();
+  refreshVehicleSource();
+  $('livePill').className = 'live-pill live';
+  $('liveLabel').textContent = 'LIVE';
+  $('demobar').style.display = 'none';
+  pollLive();
+  clearInterval(liveTimer);
+  liveTimer = setInterval(pollLive, CFG.api.pollMs);
+  return true;
+}
+$('livePill').addEventListener('click', () => {
+  if (dataMode === 'demo') { if (startLive()) showToast('Live mode — polling ' + CFG.api.vehiclesUrl); }
+  else { startDemo(); showToast('Demo mode — simulated fleet'); }
+});
+
+/* scenario buttons */
+document.querySelectorAll('.scen').forEach((b) => {
+  b.addEventListener('click', () => {
+    scenario = b.dataset.scen;
+    document.querySelectorAll('.scen').forEach((x) => x.classList.toggle('active', x === b));
+    applyScenarioStatuses(false);
+    if (scenario === 'night' && theme !== 'dusk') applyTheme('dusk');
+    if (scenario === 'rush' && theme !== 'day') applyTheme('day');
+    showToast('Scenario: <b>' + SCENARIOS[scenario].name + '</b>');
+    scheduleUIRefresh();
+  });
+});
+
+/* ---------------- selection / popup / follow ---------------- */
+let popupOpenFor = null;
+let popupEl = null;
+// focusAfterOpen must stay off: the default focus() fires mid-flyTo while the
+// popup is off-viewport and side-scrolls the page, shoving the whole HUD left.
+const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, offset: 20, maxWidth: '280px', focusAfterOpen: false });
+popup.on('close', () => { popupOpenFor = null; popupEl = null; });
+
+function popupHTML(v) {
+  const T = VTYPES[v.type] || VTYPES.van;
+  return '<div class="vp-name">' + T.emoji + ' ' + esc(v.name) + '</div>' +
+    '<div class="vp-sub">' + T.label + ' · ' + esc(v.driver) + '</div>' +
+    '<div class="vp-grid">' +
+    '<div><div class="k">Status</div><div class="v"><span class="vp-pill ' + v.status + '">' + v.status + '</span></div></div>' +
+    '<div><div class="k">Speed</div><div class="v">' + Math.round(v.speed) + ' km/h</div></div>' +
+    '<div><div class="k">Heading</div><div class="v">' + Math.round(v.heading) + '°</div></div>' +
+    '<div><div class="k">Updated</div><div class="v">' + agoStr(v.updatedAt) + '</div></div>' +
+    '</div>' +
+    '<div class="vp-row">' +
+    '<button data-act="follow" class="' + (followId === v.id ? 'on' : '') + '">' + (followId === v.id ? '◉ Chasing' : '◎ Chase cam') + '</button>' +
+    '<button data-act="playback">⏵ Playback</button>' +
+    '</div>';
+}
+function updatePopupContent() {
+  const v = fleet.get(popupOpenFor);
+  if (!v) { popup.remove(); return; }
+  popup.setLngLat([v.lng, v.lat]);
+  // only rewrite HTML once a second (buttons keep focus otherwise)
+  if (!popupEl._lastWrite || Date.now() - popupEl._lastWrite > 1000) {
+    popupEl._lastWrite = Date.now();
+    popupEl.innerHTML = popupHTML(v);
+    wirePopup(v);
+  }
+}
+function wirePopup(v) {
+  popupEl.querySelectorAll('button[data-act]').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (b.dataset.act === 'follow') {
+        if (followId === v.id) clearFollow(); else startChase(v);
+        popupEl._lastWrite = 0; updatePopupContent();
+      } else if (b.dataset.act === 'playback') openPlayback(v.id);
+    });
+  });
+}
+function selectVehicle(id, opts) {
+  selectedId = id;
+  const v = fleet.get(id);
+  if (!v) return;
+  map.setFilter('veh-selected-ring', ['==', ['get', 'id'], id]);
+  if (opts && opts.fly) {
+    stopOrbit();
+    const seq = ++flightSeq;
+    flight.active = true; flight.interrupted = false;
+    map.flyTo({ center: [v.lng, v.lat], zoom: Math.max(map.getZoom(), 15.5), duration: 1400, essential: true, padding: NO_PADDING });
+    map.once('moveend', () => { if (seq === flightSeq) flight.active = false; });
+  }
+  if (opts && opts.popup) {
+    popupOpenFor = id;
+    popupEl = document.createElement('div');
+    popupEl._lastWrite = Date.now();
+    popupEl.innerHTML = popupHTML(v);
+    wirePopup(v);
+    popup.setLngLat([v.lng, v.lat]).setDOMContent(popupEl).addTo(map);
+  }
+  scheduleUIRefresh();
+}
+/* ── chase cam: game-style camera locked behind the vehicle.
+   The map popup closes when a chase starts — vehicle info moves to the
+   docked chase HUD so it never blocks the road ahead. ── */
+const CHASE = { pitch: 66, zoom: 17.65, aheadM: 48 };
+const chase = { bearing: 0, ready: false };
+function startChase(v) {
+  followId = v.id;
+  chase.ready = false;
+  chase.bearing = v.heading;
+  stopOrbit();
+  popup.remove();                       // keep the view ahead clear
+  $('chaseCard').classList.add('on');
+  updateChaseCard(v);
+  if (!REDUCED_MOTION) $('speedHud').classList.add('on');
+  const seq = ++flightSeq;
+  flight.active = true; flight.interrupted = false;
+  map.easeTo({
+    center: destPoint([v.lng, v.lat], v.heading, CHASE.aheadM),
+    bearing: v.heading, pitch: CHASE.pitch, zoom: CHASE.zoom,
+    duration: REDUCED_MOTION ? 0 : 1100, essential: true, padding: NO_PADDING,
+  });
+  map.once('moveend', () => {
+    if (seq !== flightSeq) return;
+    flight.active = false;
+    chase.ready = followId === v.id;
+  });
+}
+function chaseFrame(pos, heading, zoomOverride) {
+  chase.bearing = lerpAngle(chase.bearing, heading, 0.08);
+  map.jumpTo({
+    center: destPoint(pos, chase.bearing, CHASE.aheadM),
+    bearing: chase.bearing,
+    pitch: CHASE.pitch,
+    zoom: zoomOverride || CHASE.zoom,
+  });
+}
+let ccLastWrite = 0;
+function updateChaseCard(v) {
+  if (Date.now() - ccLastWrite < 900) return;
+  ccLastWrite = Date.now();
+  const T = VTYPES[v.type] || VTYPES.van;
+  $('ccDot').className = 'cc-dot sdot ' + v.status;
+  $('ccName').textContent = T.emoji + ' ' + v.name;
+  $('ccMeta').textContent = v.driver + ' · ' + v.status + ' · ' + Math.round(v.heading) + '°';
+  $('speedVal').textContent = Math.round(v.speed);
+}
+$('ccStop').addEventListener('click', () => { clearFollow(); goHome(); });
+function clearFollow() {
+  if (followId) {
+    followId = null;
+    chase.ready = false;
+    $('chaseCard').classList.remove('on');
+    if (!tour.on) $('speedHud').classList.remove('on');
+    if (popupEl) { popupEl._lastWrite = 0; }
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SIDEBAR UI — stats, list, search, filters, tabs
+   ════════════════════════════════════════════════════════════════════ */
+let statusFilter = 'all';
+let searchQ = '';
+visiblePredicate = (v) => {
+  if (statusFilter !== 'all' && v.status !== statusFilter) return false;
+  if (searchQ && !((v.name + ' ' + v.driver + ' ' + v.type).toLowerCase().includes(searchQ))) return false;
+  return true;
+};
+
+let uiTimer = 0;
+let vlistUserScrollAt = 0;
+$('vlist').addEventListener('scroll', () => { vlistUserScrollAt = Date.now(); }, { passive: true });
+function scheduleUIRefresh() {
+  if (uiTimer) return;
+  uiTimer = setTimeout(() => { uiTimer = 0; renderStats(); renderVList(); renderZList(); }, 1000);
+}
+
+function renderStats() {
+  let m = 0, i = 0, o = 0;
+  for (const v of fleet.values()) { if (v.status === 'moving') m++; else if (v.status === 'idle') i++; else o++; }
+  $('stTotal').textContent = fleet.size;
+  $('stMoving').textContent = m;
+  $('stIdle').textContent = i;
+  $('stOffline').textContent = o;
+}
+
+function renderVList() {
+  const list = $('vlist');
+  if (Date.now() - vlistUserScrollAt < 2500) return;   // don't yank the list mid-scroll
+  const keepScroll = list.scrollTop;
+  const rows = [];
+  const items = [...fleet.values()].filter(visiblePredicate)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const v of items) {
+    const T = VTYPES[v.type] || VTYPES.van;
+    rows.push(
+      '<button class="vrow' + (v.id === selectedId ? ' sel' : '') + '" data-id="' + esc(v.id) + '">' +
+      '<span class="sdot ' + v.status + '"></span>' +
+      '<span class="vmeta"><span class="vname">' + T.emoji + ' ' + esc(v.name) + '</span>' +
+      '<span class="vsub">' + esc(v.driver) + ' · ' + agoStr(v.updatedAt) + '</span></span>' +
+      '<span class="vspeed' + (v.status === 'moving' ? ' on' : '') + '">' + (v.status === 'moving' ? Math.round(v.speed) + '<small> km/h</small>' : v.status) + '</span>' +
+      '<span class="pb-btn" data-pb="' + esc(v.id) + '" title="Trip playback">⏵</span>' +
+      '</button>');
+  }
+  list.innerHTML = rows.length ? rows.join('') : '<div class="empty">No vehicles match.<br>Adjust the search or filters.</div>';
+  list.scrollTop = keepScroll;
+}
+$('vlist').addEventListener('click', (e) => {
+  const pb = e.target.closest('[data-pb]');
+  if (pb) { openPlayback(pb.dataset.pb); return; }
+  const row = e.target.closest('.vrow');
+  if (row) selectVehicle(row.dataset.id, { fly: true, popup: true });
+});
+
+$('search').addEventListener('input', (e) => {
+  searchQ = e.target.value.trim().toLowerCase();
+  refreshVehicleSource();
+  renderVList();
+});
+$('filters').addEventListener('click', (e) => {
+  const chip = e.target.closest('.fchip');
+  if (!chip) return;
+  statusFilter = chip.dataset.f;
+  document.querySelectorAll('.fchip').forEach((c) => c.classList.toggle('active', c === chip));
+  refreshVehicleSource();
+  renderVList();
+});
+
+document.querySelectorAll('.tab').forEach((t) => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === t));
+    document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + t.dataset.pane));
+    if (t.dataset.pane === 'alerts') { unreadAlerts = 0; renderAlertBadge(); }
+  });
+});
+
+$('sideCollapse').addEventListener('click', () => { document.body.classList.add('sidebar-closed'); $('sideOpener').hidden = false; });
+$('sideOpener').addEventListener('click', () => { document.body.classList.remove('sidebar-closed'); $('sideOpener').hidden = true; });
+if (MOBILE_MQ.matches) { document.body.classList.add('sidebar-closed'); $('sideOpener').hidden = false; }
+
+/* ════════════════════════════════════════════════════════════════════
+   GEOFENCES — draw, edit, alerts
+   ════════════════════════════════════════════════════════════════════ */
+const zones = SAMPLE_ZONES.map((z) => ({ ...z }));
+const zoneState = new Map();   // "vid|zid" → inside?
+const alerts = [];
+let unreadAlerts = 0;
+let lastAlertToast = 0;
+const ZONE_COLORS = ['#2dd4bf', '#60a5fa', '#f59e0b', '#a78bfa', '#f472b6', '#84cc16'];
+const draw = { mode: null, pts: [], editing: null, dragIdx: -1 };
+
+function zonesGeoJSON() {
+  return {
+    type: 'FeatureCollection',
+    features: zones.map((z) => ({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [z.ring] },
+      properties: { id: z.id, name: z.name, color: z.color },
+    })),
+  };
+}
+function zoneCentroid(z) {
+  let x = 0, y = 0;
+  for (const p of z.ring) { x += p[0]; y += p[1]; }
+  return [x / z.ring.length, y / z.ring.length];
+}
+function setupZoneLayers() {
+  map.addSource('zones', { type: 'geojson', data: zonesGeoJSON() });
+  map.addLayer({
+    id: 'zone-fill', type: 'fill', source: 'zones',
+    paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.1 },
+  });
+  map.addLayer({
+    id: 'zone-line', type: 'line', source: 'zones',
+    paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-dasharray': [3, 2] },
+  });
+  map.addSource('zone-label-pts', { type: 'geojson', data: zoneLabelGeoJSON() });
+  map.addLayer({
+    id: 'zone-labels', type: 'symbol', source: 'zone-label-pts',
+    layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11 },
+    paint: { 'text-color': THEMES[theme].label, 'text-halo-color': THEMES[theme].labelHalo, 'text-halo-width': 1.4 },
+  });
+  // draw preview
+  map.addSource('draw-preview', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'draw-line', type: 'line', source: 'draw-preview', paint: { 'line-color': CFG.company.accent, 'line-width': 2, 'line-dasharray': [2, 2] } });
+  map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw-preview', paint: { 'fill-color': CFG.company.accent, 'fill-opacity': 0.08 } });
+  map.addLayer({ id: 'draw-pts', type: 'circle', source: 'draw-preview', filter: ['==', ['geometry-type'], 'Point'],
+    paint: { 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-width': 2, 'circle-stroke-color': CFG.company.accent } });
+  // vertex handles for zone editing
+  map.addSource('zone-handles', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'zone-handle-pts', type: 'circle', source: 'zone-handles',
+    paint: { 'circle-radius': 6.5, 'circle-color': '#fff', 'circle-stroke-width': 2.5, 'circle-stroke-color': CFG.company.accent } });
+}
+function zoneLabelGeoJSON() {
+  return { type: 'FeatureCollection', features: zones.map((z) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: zoneCentroid(z) }, properties: { name: z.name } })) };
+}
+function refreshZones() {
+  const s1 = map.getSource('zones'); if (s1) s1.setData(zonesGeoJSON());
+  const s2 = map.getSource('zone-label-pts'); if (s2) s2.setData(zoneLabelGeoJSON());
+  renderZList();
+}
+
+function renderZList() {
+  const list = $('zlist');
+  const insideCounts = {};
+  for (const z of zones) insideCounts[z.id] = 0;
+  for (const v of fleet.values()) for (const z of zones) if (pointInPoly([v.lng, v.lat], z.ring)) insideCounts[z.id]++;
+  list.innerHTML = zones.map((z) =>
+    '<div class="zrow' + (draw.editing === z.id ? ' editing' : '') + '">' +
+    '<span class="zdot" style="background:' + z.color + '"></span>' +
+    '<span class="zmeta"><button class="zname" data-rename="' + z.id + '" title="Rename zone">' + esc(z.name) + '</button>' +
+    '<span class="zsub">' + z.ring.length + ' pts · alerts on enter/exit</span></span>' +
+    '<span class="zin">' + insideCounts[z.id] + ' in</span>' +
+    '<button class="zx' + (draw.editing === z.id ? ' on' : '') + '" data-edit="' + z.id + '" title="Edit vertices">✎</button>' +
+    '<button class="zx" data-zoom="' + z.id + '" title="Zoom to zone">⌖</button>' +
+    '<button class="zx" data-del="' + z.id + '" title="Delete zone">✕</button>' +
+    '</div>').join('') || '<div class="empty">No zones. Draw one above.</div>';
+}
+$('zlist').addEventListener('click', (e) => {
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    if (draw.editing === del.dataset.del) stopZoneEdit();
+    const i = zones.findIndex((z) => z.id === del.dataset.del);
+    if (i >= 0) { const [z] = zones.splice(i, 1); refreshZones(); showToast('Zone <b>' + esc(z.name) + '</b> deleted'); }
+    return;
+  }
+  const ren = e.target.closest('[data-rename]');
+  if (ren) {
+    const z = zones.find((x) => x.id === ren.dataset.rename);
+    if (z) { const n = prompt('Rename zone:', z.name); if (n) { z.name = n; refreshZones(); } }
+    return;
+  }
+  const ed = e.target.closest('[data-edit]');
+  if (ed) { draw.editing === ed.dataset.edit ? stopZoneEdit() : startZoneEdit(ed.dataset.edit); return; }
+  const zm = e.target.closest('[data-zoom]');
+  if (zm) {
+    const z = zones.find((x) => x.id === zm.dataset.zoom);
+    if (!z) return;
+    let minX = 180, minY = 90, maxX = -180, maxY = -90;
+    for (const p of z.ring) { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); }
+    map.fitBounds([[minX, minY], [maxX, maxY]], { padding: 80, pitch: 45, duration: 1200 });
+  }
+});
+
+/* drawing */
+function setDrawMode(mode) {
+  draw.mode = draw.mode === mode ? null : mode;
+  draw.pts = [];
+  updateDrawPreview();
+  $('drawPoly').classList.toggle('active', draw.mode === 'polygon');
+  $('drawCircle').classList.toggle('active', draw.mode === 'circle');
+  const hint = $('drawHint');
+  if (draw.mode === 'polygon') { hint.textContent = 'Click to add vertices · double-click or Enter to finish · Esc to cancel'; hint.classList.add('on'); }
+  else if (draw.mode === 'circle') { hint.textContent = 'Click the circle centre, then click again for the radius · Esc to cancel'; hint.classList.add('on'); }
+  else hint.classList.remove('on');
+  map.getCanvas().style.cursor = draw.mode ? 'crosshair' : '';
+  map.doubleClickZoom[draw.mode ? 'disable' : 'enable']();
+}
+$('drawPoly').addEventListener('click', () => setDrawMode('polygon'));
+$('drawCircle').addEventListener('click', () => setDrawMode('circle'));
+
+function updateDrawPreview(cursor) {
+  const feats = [];
+  if (draw.mode === 'polygon' && draw.pts.length) {
+    const line = [...draw.pts]; if (cursor) line.push(cursor);
+    feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: line } });
+    if (line.length >= 3) feats.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...line, line[0]]] } });
+    for (const p of draw.pts) feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: p } });
+  }
+  if (draw.mode === 'circle' && draw.pts.length === 1) {
+    feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: draw.pts[0] } });
+    if (cursor) {
+      const r = haversine(draw.pts[0], cursor);
+      feats.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [circlePoly(draw.pts[0], Math.max(r, 30))] } });
+    }
+  }
+  const src = map.getSource('draw-preview');
+  if (src) src.setData({ type: 'FeatureCollection', features: feats });
+}
+function finishPolygon() {
+  if (draw.pts.length < 3) { setDrawMode(null); return; }
+  const ring = [...draw.pts, draw.pts[0]];
+  addZone(ring);
+  setDrawMode(null);
+}
+function addZone(ring) {
+  const name = prompt('Zone name?', 'Zone ' + (zones.length + 1)) || ('Zone ' + (zones.length + 1));
+  zones.push({ id: 'z' + Date.now(), name, color: ZONE_COLORS[zones.length % ZONE_COLORS.length], ring });
+  refreshZones();
+  showToast('Zone <b>' + esc(name) + '</b> created — alerts armed');
+}
+
+map.on('click', (e) => {
+  if (e.originalEvent && e.originalEvent._vehHit) return;
+  if (draw.mode === 'polygon') { draw.pts.push([e.lngLat.lng, e.lngLat.lat]); updateDrawPreview(); return; }
+  if (draw.mode === 'circle') {
+    if (draw.pts.length === 0) { draw.pts.push([e.lngLat.lng, e.lngLat.lat]); updateDrawPreview([e.lngLat.lng, e.lngLat.lat]); }
+    else {
+      const r = Math.max(haversine(draw.pts[0], [e.lngLat.lng, e.lngLat.lat]), 30);
+      addZone(circlePoly(draw.pts[0], r));
+      setDrawMode(null);
+    }
+    return;
+  }
+});
+map.on('dblclick', () => { if (draw.mode === 'polygon') finishPolygon(); });
+map.on('mousemove', (e) => { if (draw.mode) updateDrawPreview([e.lngLat.lng, e.lngLat.lat]); });
+
+/* zone vertex editing: ✎ a zone → drag the white handles; ✎ again or Esc to finish */
+function handleGeoJSON(z) {
+  // last ring point duplicates the first — expose only the unique vertices
+  return { type: 'FeatureCollection', features: z.ring.slice(0, -1).map((p, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: p }, properties: { i } })) };
+}
+function startZoneEdit(zid) {
+  const z = zones.find((x) => x.id === zid);
+  if (!z) return;
+  setDrawMode(null);
+  draw.editing = zid;
+  map.getSource('zone-handles').setData(handleGeoJSON(z));
+  showToast('Editing <b>' + esc(z.name) + '</b> — drag the white handles, then press ✎ or Esc to finish.');
+  renderZList();
+}
+function stopZoneEdit() {
+  draw.editing = null;
+  draw.dragIdx = -1;
+  const s = map.getSource('zone-handles');
+  if (s) s.setData({ type: 'FeatureCollection', features: [] });
+  renderZList();
+}
+map.on('mousedown', 'zone-handle-pts', (e) => {
+  if (!draw.editing) return;
+  e.preventDefault();                      // keep dragPan from grabbing the gesture
+  draw.dragIdx = e.features[0].properties.i;
+  map.getCanvas().style.cursor = 'grabbing';
+  const onMove = (ev) => {
+    const z = zones.find((x) => x.id === draw.editing);
+    if (!z || draw.dragIdx < 0) return;
+    const p = [ev.lngLat.lng, ev.lngLat.lat];
+    z.ring[draw.dragIdx] = p;
+    if (draw.dragIdx === 0) z.ring[z.ring.length - 1] = p;   // keep the ring closed
+    map.getSource('zones').setData(zonesGeoJSON());
+    map.getSource('zone-handles').setData(handleGeoJSON(z));
+  };
+  const onUp = () => {
+    map.off('mousemove', onMove);
+    draw.dragIdx = -1;
+    map.getCanvas().style.cursor = '';
+    refreshZones();
+  };
+  map.on('mousemove', onMove);
+  map.once('mouseup', onUp);
+});
+map.on('mouseenter', 'zone-handle-pts', () => { if (draw.editing) map.getCanvas().style.cursor = 'grab'; });
+map.on('mouseleave', 'zone-handle-pts', () => { if (draw.dragIdx < 0) map.getCanvas().style.cursor = ''; });
+
+/* alerts */
+function checkGeofences() {
+  const now = Date.now();
+  for (const v of fleet.values()) {
+    for (const z of zones) {
+      const key = v.id + '|' + z.id;
+      const inside = pointInPoly([v.lng != null ? v.lng : v.toLng, v.lat != null ? v.lat : v.toLat], z.ring);
+      const was = zoneState.get(key);
+      if (was === undefined) { zoneState.set(key, inside); continue; }
+      if (inside !== was) {
+        zoneState.set(key, inside);
+        const type = inside ? 'enter' : 'exit';
+        alerts.unshift({ t: now, vid: v.id, vname: v.name, zname: z.name, type });
+        if (alerts.length > 60) alerts.pop();
+        unreadAlerts++;
+        renderAlerts();
+        renderAlertBadge();
+        // rate-limit alert toasts — busy zones would otherwise spam the screen
+        if (now - lastAlertToast > 4000) {
+          lastAlertToast = now;
+          showToast('<b>' + esc(v.name) + '</b> ' + (inside ? 'entered' : 'left') + ' <b>' + esc(z.name) + '</b>');
+        }
+      }
+    }
+  }
+}
+function renderAlerts() {
+  $('alist').innerHTML = alerts.length
+    ? alerts.map((a) => '<div class="arow ' + a.type + '"><div class="amsg"><b>' + esc(a.vname) + '</b> ' + (a.type === 'enter' ? 'entered' : 'left') + ' <b>' + esc(a.zname) + '</b></div><div class="atime">' + fmtTime(a.t) + '</div></div>').join('')
+    : '<div class="empty">No geofence alerts yet.</div>';
+}
+function renderAlertBadge() {
+  const b = $('alertBadge');
+  b.textContent = unreadAlerts > 9 ? '9+' : unreadAlerts;
+  b.classList.toggle('on', unreadAlerts > 0);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   TRIP PLAYBACK
+   ════════════════════════════════════════════════════════════════════ */
+const playback = { open: false, vid: null, clock: 0, playing: false, raf: 0, lastTs: 0 };
+
+function setupPlaybackLayers() {
+  map.addSource('pb-trail', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'pb-trail-line', type: 'line', source: 'pb-trail',
+    paint: { 'line-color': '#2dd4bf', 'line-width': 3.5, 'line-opacity': 0.9 } });
+  map.addSource('pb-ghost', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'pb-ghost-pt', type: 'symbol', source: 'pb-ghost',
+    layout: { 'icon-image': 'veh-ghost', 'icon-size': 1.2, 'icon-rotate': ['get', 'heading'],
+      'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true } });
+  // the guided-tour courier bike + its breadcrumb trail
+  map.addSource('tour-bike', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addSource('tour-trail', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'tour-trail-line', type: 'line', source: 'tour-trail',
+    paint: { 'line-color': CFG.company.accent, 'line-width': 4, 'line-opacity': 0.85 } });
+  map.addLayer({ id: 'tour-bike-pt', type: 'symbol', source: 'tour-bike',
+    layout: { 'icon-image': 'veh-tour', 'icon-size': 1.5, 'icon-rotate': ['get', 'heading'],
+      'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
+}
+function setTourBike(pos, heading) {
+  tourBusState.pos = pos || null;            // 3D bus model (when three.js is up)
+  tourBusState.heading = heading || 0;
+  const src = map.getSource('tour-bike');    // flat-icon fallback
+  if (src) src.setData(pos
+    ? { type: 'Feature', geometry: { type: 'Point', coordinates: pos }, properties: { heading: Math.round(heading || 0) } }
+    : { type: 'FeatureCollection', features: [] });
+}
+function setTourTrail(coords) {
+  const src = map.getSource('tour-trail');
+  if (src) src.setData(coords && coords.length > 1
+    ? { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }
+    : { type: 'FeatureCollection', features: [] });
+}
+
+function openPlayback(vid) {
+  const h = history.get(vid);
+  const v = fleet.get(vid);
+  if (!h || h.length < 5 || !v) { showToast('Not enough track history yet — let the vehicle move a little.'); return; }
+  stopOrbit(); endTour(false); popup.remove();
+  playback.open = true;
+  playback.vid = vid;
+  playback.clock = h[0][0];
+  playback.playing = true;
+  $('pbbar').classList.add('show');
+  $('pbTitle').innerHTML = (VTYPES[v.type] || VTYPES.van).emoji + ' ' + esc(v.name) + ' <small>· trip playback (' + Math.round((h[h.length - 1][0] - h[0][0]) / 60000) + ' min)</small>';
+  $('pbSlider').min = h[0][0];
+  $('pbSlider').max = h[h.length - 1][0];
+  $('pbSlider').value = h[0][0];
+  $('pbPlay').textContent = '❚❚';
+  playback.lastTs = 0;
+  cancelAnimationFrame(playback.raf);
+  playback.raf = requestAnimationFrame(pbFrame);
+}
+function closePlayback() {
+  if (!playback.open) return;
+  playback.open = false;
+  playback.playing = false;
+  cancelAnimationFrame(playback.raf);
+  $('pbbar').classList.remove('show');
+  const t = map.getSource('pb-trail'); if (t) t.setData({ type: 'FeatureCollection', features: [] });
+  const g = map.getSource('pb-ghost'); if (g) g.setData({ type: 'FeatureCollection', features: [] });
+}
+function pbSample(h, t) {
+  if (t <= h[0][0]) return { lng: h[0][1], lat: h[0][2], heading: 0, speed: h[0][3] };
+  for (let i = 1; i < h.length; i++) {
+    if (h[i][0] >= t) {
+      const a = h[i - 1], b = h[i];
+      const k = (t - a[0]) / Math.max(1, b[0] - a[0]);
+      return {
+        lng: lerp(a[1], b[1], k), lat: lerp(a[2], b[2], k),
+        heading: bearingTo([a[1], a[2]], [b[1], b[2]]),
+        speed: lerp(a[3], b[3], k),
+      };
+    }
+  }
+  const z = h[h.length - 1];
+  return { lng: z[1], lat: z[2], heading: 0, speed: z[3] };
+}
+function pbFrame(ts) {
+  if (!playback.open) return;
+  playback.raf = requestAnimationFrame(pbFrame);
+  const h = history.get(playback.vid);
+  if (!h || !h.length) { closePlayback(); return; }
+  $('pbSlider').max = h[h.length - 1][0];   // the live edge keeps growing during playback
+  if (playback.playing) {
+    if (playback.lastTs) {
+      const mult = +$('pbSpeed').value;
+      playback.clock += (ts - playback.lastTs) * mult;
+      if (playback.clock >= h[h.length - 1][0]) { playback.clock = h[h.length - 1][0]; playback.playing = false; $('pbPlay').textContent = '▶'; }
+      $('pbSlider').value = playback.clock;
+    }
+  }
+  playback.lastTs = ts;
+  const s = pbSample(h, playback.clock);
+  $('pbTime').textContent = fmtTime(playback.clock);
+  const trail = h.filter((p) => p[0] <= playback.clock).map((p) => [p[1], p[2]]);
+  trail.push([s.lng, s.lat]);
+  map.getSource('pb-trail').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: trail } });
+  map.getSource('pb-ghost').setData({ type: 'Feature', geometry: { type: 'Point', coordinates: [s.lng, s.lat] }, properties: { heading: s.heading } });
+  if ($('pbFollow').checked && !map.isMoving() && !flight.active) map.jumpTo({ center: [s.lng, s.lat] });
+}
+$('pbPlay').addEventListener('click', () => {
+  playback.playing = !playback.playing;
+  $('pbPlay').textContent = playback.playing ? '❚❚' : '▶';
+  const h = history.get(playback.vid);
+  if (playback.playing && h && playback.clock >= h[h.length - 1][0]) playback.clock = h[0][0];
+});
+$('pbSlider').addEventListener('input', (e) => { playback.clock = +e.target.value; playback.playing = false; $('pbPlay').textContent = '▶'; });
+$('pbClose').addEventListener('click', closePlayback);
+
+/* ════════════════════════════════════════════════════════════════════
+   SHARE · THEME · FIT · HELP · STATUS · KEYBOARD
+   ════════════════════════════════════════════════════════════════════ */
+$('btnShare').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(location.href);
+    showToast('View link copied — paste to share this exact camera.');
+  } catch (_) {
+    prompt('Copy this link:', location.href);
+  }
+});
+$('btnTheme').addEventListener('click', () => applyTheme(theme === 'dusk' ? 'day' : 'dusk'));
+$('btnOrbit').addEventListener('click', toggleOrbit);
+$('btnFit').addEventListener('click', fitFleet);
+function fitFleet() {
+  const pts = [...fleet.values()].filter(visiblePredicate);
+  if (!pts.length) return;
+  let minX = 180, minY = 90, maxX = -180, maxY = -90;
+  for (const v of pts) { minX = Math.min(minX, v.lng); maxX = Math.max(maxX, v.lng); minY = Math.min(minY, v.lat); maxY = Math.max(maxY, v.lat); }
+  stopOrbit();
+  map.fitBounds([[minX, minY], [maxX, maxY]], { padding: { top: 90, bottom: 90, left: MOBILE_MQ.matches ? 60 : 380, right: 80 }, pitch: 50, duration: 1400 });
+}
+
+const modalBack = $('modalBack');
+let lastFocus = null;
+function openModal() { lastFocus = document.activeElement; modalBack.classList.add('show'); $('modalClose').focus(); }
+function closeModal() { modalBack.classList.remove('show'); if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+$('btnHelp').addEventListener('click', openModal);
+$('modalClose').addEventListener('click', closeModal);
+modalBack.addEventListener('click', (e) => { if (e.target === modalBack) closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab' || !modalBack.classList.contains('show')) return;
+  const f = modalBack.querySelectorAll('a[href], button');
+  const first = f[0], last = f[f.length - 1];
+  if (!modalBack.contains(document.activeElement)) { e.preventDefault(); first.focus(); return; }
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+/* toast */
+const toastEl = $('toast');
+let toastTimer = 0;
+function showToast(html, ms) {
+  toastEl.innerHTML = html;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms || 3800);
+}
+let lastErrToast = 0;
+function errToast(msg) {
+  const now = Date.now();
+  if (now - lastErrToast < 30000) return;
+  lastErrToast = now;
+  showToast(msg);
+}
+
+/* status bar + fps */
+let frames = 0, fps = 0, lastFpsAt = performance.now();
+(function fpsLoop(ts) {
+  requestAnimationFrame(fpsLoop);
+  frames++;
+  if (ts - lastFpsAt >= 1000) { fps = frames; frames = 0; lastFpsAt = ts; }
+})(performance.now());
+let lastStatus = '';
+let statusPending = false;
+function updateStatusBar() {
+  if (MOBILE_MQ.matches || statusPending) return;
+  statusPending = true;
+  requestAnimationFrame(() => {
+    statusPending = false;
+    const c = map.getCenter();
+    const s = c.lat.toFixed(4) + '°N ' + c.lng.toFixed(4) + '°E · z' + map.getZoom().toFixed(1) +
+      ' · ' + Math.round(map.getPitch()) + '° · ' + fleet.size + ' veh · ' + fps + ' fps · ' + BUILD +
+      (veh3d ? ' · 3D' : ' · 2D!');
+    if (s !== lastStatus) { lastStatus = s; $('statusbar').textContent = s; }
+  });
+}
+map.on('move', updateStatusBar);
+setInterval(updateStatusBar, 1000);
+
+/* keyboard */
+let introStarted = false;
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
+    if (e.key === 'Escape') t.blur();
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (draw.mode) { setDrawMode(null); return; }
+    if (draw.editing) { stopZoneEdit(); return; }
+    if (modalBack.classList.contains('show')) { closeModal(); return; }
+    if (playback.open) { closePlayback(); return; }
+    if (tour.on) { endTour(true); return; }
+    popup.remove();
+    return;
+  }
+  if (e.key === 'Enter' && draw.mode === 'polygon') { finishPolygon(); return; }
+  if (!introStarted) return;
+  if (modalBack.classList.contains('show') && e.key.toLowerCase() !== 'h' && e.key !== '?') return;
+  if (e.key === ' ' && playback.open) { e.preventDefault(); $('pbPlay').click(); return; }
+  if (e.key === '/') { e.preventDefault(); document.body.classList.remove('sidebar-closed'); $('sideOpener').hidden = true; $('search').focus(); return; }
+  switch (e.key.toLowerCase()) {
+    case 't': startTour(); break;
+    case 'd': applyTheme(theme === 'dusk' ? 'day' : 'dusk'); break;
+    case 'o': toggleOrbit(); break;
+    case 'f': fitFleet(); break;
+    case 'c': $('btnShare').click(); break;
+    case 'h': case '?': modalBack.classList.contains('show') ? closeModal() : openModal(); break;
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   BOOT — globe intro → Delhi
+   ════════════════════════════════════════════════════════════════════ */
+try { const saved = localStorage.getItem('fleet-theme'); if (saved === 'day' || saved === 'dusk') theme = saved; } catch (_) {}
+
+function beginIntro() {
+  if (introStarted) return;
+  introStarted = true;
+  loaderEl.classList.add('gone');
+  armIdleOrbit();
+  // the fleet spins up now — per-frame vehicle setData would starve the
+  // pre-intro 'idle' gate if it started any earlier
+  if (dataMode === 'demo') startDemo();
+  renderRaf = requestAnimationFrame(renderLoop);
+  harvestGlowFootprints();
+  if (!DO_GLOBE) { map.setMaxBounds(DELHI_BOUNDS); map.setMinZoom(8.5); return; }
+  const seq = ++flightSeq;
+  flight.active = true; flight.interrupted = false;
+  map.flyTo({ ...HOME, padding: NO_PADDING, duration: 9000, essential: true, curve: 1.32 });
+  map.once('moveend', () => {
+    if (seq !== flightSeq) return;
+    flight.active = false;
+    map.setMaxBounds(DELHI_BOUNDS);
+    map.setMinZoom(8.5);
+    showToast('Welcome to <b>' + CFG.company.name + '</b> — press <b>T</b> for the Delhi tour, <b>H</b> for shortcuts.', 5200);
+  });
+}
+
+map.on('load', () => {
+  mapLoaded = true;
+  clearInterval(msgTimer);
+  clearTimeout(failTimer);
+  loaderEl.classList.remove('failed');
+  loaderMsg.textContent = 'Building the city…';
+
+  map.setProjection({ type: 'globe' });        // globe at low zoom, mercator at street zoom
+  setupBuildings();
+  addLandmarkMarkers();
+  setupZoneLayers();
+  setupVehicleLayers();
+  setupPlaybackLayers();
+  tryInitVeh3d();                              // 3D models if three.js beat us here
+  applyTheme(theme);
+
+  renderAlerts();
+  refreshZones();
+
+  if (DO_GLOBE) map.jumpTo({ ...SPACE, padding: NO_PADDING });
+  else if (!HAS_VIEW_HASH) map.jumpTo({ ...HOME, padding: NO_PADDING });
+  map.once('idle', beginIntro);
+  setTimeout(beginIntro, 9000);
+  // if three.js never arrives, say so loudly — "pointer" arrows mean THIS fired
+  setTimeout(() => {
+    if (!veh3d) showToast('⚠️ 3D vehicle models could not load (network to unpkg.com?) — showing flat arrow fallback.', 8000);
+  }, 14000);
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) lastTickAt = performance.now();
+});
+</script>
+</body>
+</html>
