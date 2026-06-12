@@ -1777,6 +1777,8 @@ function startTour() {
   tour.on = true;
   tour.idx = 0;
   tour.park = null;
+  tour._completed = false;
+  gtag('event', 'tour_started');
   $('btnTour').setAttribute('aria-pressed', 'true');
   tourcard.classList.add('show');
   tourStep();
@@ -1788,6 +1790,7 @@ function tourStep() {
   $('speedHud').classList.remove('on');
   setNextStopMarker(null);
   const lm = lmById[TOUR_IDS[tour.idx]];
+  gtag('event', 'tour_landmark_reached', { landmark: lm.name, stop_number: tour.idx + 1, total_stops: TOUR_IDS.length });
   $('tStep').textContent = 'Tour · stop ' + (tour.idx + 1) + ' of ' + TOUR_IDS.length;
   $('tName').textContent = lm.icon + '  ' + lm.name;
   $('tDesc').textContent = lm.desc;
@@ -1822,7 +1825,7 @@ function tourStep() {
 async function startRide() {
   if (!tour.on) return;
   const i = tour.idx;
-  if (i + 1 >= TOUR_IDS.length) { endTour(true); return; }
+  if (i + 1 >= TOUR_IDS.length) { tour._completed = true; gtag('event', 'tour_completed', { total_stops: TOUR_IDS.length }); endTour(true); return; }
   const from = lmById[TOUR_IDS[i]], to = lmById[TOUR_IDS[i + 1]];
   let route = null;
   try { route = await Promise.race([tour.nextRoutePromise, new Promise((r) => setTimeout(() => r(null), 4000))]); } catch (_) {}
@@ -1896,6 +1899,7 @@ function tourRideFrame(ts) {
 }
 function endTour(thenHome) {
   if (!tour.on) return;
+  if (!tour._completed) gtag('event', 'tour_abandoned', { stopped_at_stop: tour.idx + 1, total_stops: TOUR_IDS.length });
   tour.on = false;
   tour.ride = null;
   clearTimeout(tour.timer);
