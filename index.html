@@ -2099,7 +2099,7 @@ function tryInitVeh3d() {
     return matCache.get(k);
   };
   const DARK = 0x161c2a, GLASS = 0x33405a, TYRE = 0x14181f, HUB = 0x9aa4b3, WHITE = 0xf2f5fa; // dark slate glass: merges with the dark family, kills the toy-blue patch
-  const SHIRT = 0x3e6390; // rider shirt — distinct from DARK so the person reads against seat/box
+  const SHIRT = 0x4a7ab5; // rider shirt — bright enough to read against the dark seat/box even in rear shadow
 
   // place() mirrors with scale(s,-s,s) which flips winding AND breaks Lambert normals
   // (DoubleSide backface flip turns roof normals downward → everything lit by dark ground
@@ -2186,24 +2186,26 @@ function tryInitVeh3d() {
       g.add(box(0.36, 0.32, 0.36, color, 0, 0.80, 1.06, color, 0.35)); // headlamp cowl
       g.add(box(0.24, 0.10, 0.20, LIGHT, 0, 0.98, 1.12, 0xffe9a8, 0.9)); // headlamp
       g.add(box(0.78, 0.10, 0.09, DARK, 0, 0.70, 1.38));     // handlebar crossbar
-      // rider — must read as a PERSON: leaning shirt torso, jeans legs astride
-      // the seat, arms to the grips, white helmet sphere + dark visor. Helmet is
-      // deliberately NOT a bike/status color so the human silhouette pops.
-      const torso = box(0.46, 0.40, 0.66, SHIRT, 0, -0.38, 1.04);
+      // rider — must read as a PERSON from EVERY angle, especially the chase cam
+      // (which looks at the bike from BEHIND). Shoulders are wider than the
+      // delivery box so the human silhouette wins the rear view; helmet is a
+      // white sphere (no bike/status color) so the head pops.
+      const torso = box(0.52, 0.40, 0.70, SHIRT, 0, -0.38, 1.04);
       torso.rotation.x = -0.10;                              // slight riding lean toward the bars
       g.add(torso);
-      for (const x of [0.27, -0.27]) {
-        const arm = box(0.13, 1.0, 0.13, SHIRT, x, 0.14, 1.40);
+      g.add(box(0.68, 0.34, 0.18, SHIRT, 0, -0.40, 1.56));   // shoulder bar — T-silhouette from the rear
+      for (const x of [0.31, -0.31]) {
+        const arm = box(0.15, 1.0, 0.15, SHIRT, x, 0.14, 1.40);
         arm.rotation.x = -0.15;                              // front end dips toward the grips
         g.add(arm);
-        g.add(box(0.15, 0.46, 0.16, GLASS, x, -0.20, 0.86)); // thigh: hip → knee past the seat edge
-        g.add(box(0.15, 0.16, 0.46, GLASS, x, -0.02, 0.40)); // shin: knee down beside the engine
+        g.add(box(0.16, 0.46, 0.16, GLASS, x - Math.sign(x) * 0.03, -0.20, 0.86)); // thigh: hip → knee
+        g.add(box(0.16, 0.16, 0.46, GLASS, x - Math.sign(x) * 0.03, -0.02, 0.40)); // shin: down beside engine
       }
-      const helmet = new THREE.Mesh(ygeo(new THREE.SphereGeometry(0.24, 14, 10)), mat(WHITE));
-      helmet.position.set(0, -0.33, 1.84);
+      const helmet = new THREE.Mesh(ygeo(new THREE.SphereGeometry(0.27, 14, 10)), mat(WHITE));
+      helmet.position.set(0, -0.33, 1.92);
       g.add(helmet);
-      g.add(box(0.30, 0.07, 0.14, DARK, 0, -0.10, 1.78));    // visor band on the helmet front
-      g.add(box(0.56, 0.52, 0.50, DARK, 0, -1.10, 0.98));    // rear black delivery box on carrier
+      g.add(box(0.32, 0.07, 0.15, DARK, 0, -0.08, 1.85));    // visor band on the helmet front
+      g.add(box(0.44, 0.46, 0.38, DARK, 0, -1.14, 0.94));    // rear delivery box — smaller than the rider
     } else if (type === 'car') {
       g.add(blobShadow(2.9, 6.2));
       g.add(box(2.2, 5.0, 0.85, color, 0, 0, 0.45, color, 0.22)); // body shell
@@ -2252,7 +2254,7 @@ function tryInitVeh3d() {
     addOutlines(g);
     g.matrixAutoUpdate = false;
     // legibility exaggeration — small vehicles need more to read at chase zoom
-    g.userData.scale = type === 'bike' ? 3.6 : type === 'car' ? 3.3 : type === 'bus' ? 2.6 : 2.8;
+    g.userData.scale = type === 'bike' ? 3.9 : type === 'car' ? 3.3 : type === 'bus' ? 2.6 : 2.8;
     return g;
   }
   function place(g, pos, heading) {
@@ -2656,6 +2658,10 @@ function selectVehicle(id, opts) {
    The map popup closes when a chase starts — vehicle info moves to the
    docked chase HUD so it never blocks the road ahead. ── */
 const CHASE = { pitch: 66, zoom: 17.65, aheadM: 48 };
+// small vehicles need a closer chase cam or the rider/driver doesn't read —
+// a bike at truck-distance is ~35px tall and looks like an empty frame
+const CHASE_TUNE = { bike: { zoom: 18.1, aheadM: 36 }, car: { zoom: 17.8, aheadM: 44 } };
+const chaseTune = () => { const v = fleet.get(followId); return (v && CHASE_TUNE[v.type]) || CHASE; };
 const chase = { bearing: 0, ready: false };
 function startChase(v) {
   followId = v.id;
@@ -2668,9 +2674,10 @@ function startChase(v) {
   if (!REDUCED_MOTION) $('speedHud').classList.add('on');
   const seq = ++flightSeq;
   flight.active = true; flight.interrupted = false;
+  const tune = CHASE_TUNE[v.type] || CHASE;
   map.easeTo({
-    center: destPoint([v.lng, v.lat], v.heading, CHASE.aheadM),
-    bearing: v.heading, pitch: CHASE.pitch, zoom: CHASE.zoom,
+    center: destPoint([v.lng, v.lat], v.heading, tune.aheadM),
+    bearing: v.heading, pitch: CHASE.pitch, zoom: tune.zoom,
     duration: REDUCED_MOTION ? 0 : 1100, essential: true, padding: NO_PADDING,
   });
   map.once('moveend', () => {
@@ -2680,12 +2687,13 @@ function startChase(v) {
   });
 }
 function chaseFrame(pos, heading, zoomOverride) {
+  const tune = chaseTune();
   chase.bearing = lerpAngle(chase.bearing, heading, 0.08);
   map.jumpTo({
-    center: destPoint(pos, chase.bearing, CHASE.aheadM),
+    center: destPoint(pos, chase.bearing, tune.aheadM),
     bearing: chase.bearing,
     pitch: CHASE.pitch,
-    zoom: zoomOverride || CHASE.zoom,
+    zoom: zoomOverride || tune.zoom,
   });
 }
 let ccLastWrite = 0;
